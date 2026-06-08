@@ -28,6 +28,13 @@ DEFAULT_STATION_LIMITS = {
     "6002": 18,
 }
 
+SERVICE_WINDOWS = {
+    "M4137": ("05:00", "00:10"),
+    "M4130": ("05:00", "00:10"),
+    "G6009": ("05:10", "00:00"),
+    "6002": ("05:00", "23:55"),
+}
+
 GYEONGGI_ROUTE_STATIONS_URL = "https://apis.data.go.kr/6410000/busrouteservice/v2/getBusRouteStationListv2"
 GYEONGGI_ARRIVAL_URL = "https://apis.data.go.kr/6410000/busarrivalservice/v2/getBusArrivalItemv2"
 
@@ -150,6 +157,25 @@ def parse_int(value: str | None) -> int | None:
         return None
 
 
+def parse_hhmm(value: str) -> int:
+    hour, minute = value.split(":", 1)
+    return int(hour) * 60 + int(minute)
+
+
+def is_within_service_window(route_name: str, now: datetime) -> bool:
+    start, end = SERVICE_WINDOWS[route_name]
+    start_minute = parse_hhmm(start)
+    end_minute = parse_hhmm(end)
+    now_minute = now.hour * 60 + now.minute
+    if start_minute <= end_minute:
+        return start_minute <= now_minute <= end_minute
+    return now_minute >= start_minute or now_minute <= end_minute
+
+
+def is_pass_through_station(station: dict[str, str]) -> bool:
+    return "(경유)" in station.get("stationName", "")
+
+
 def rows_from_arrival(collected_at: datetime, station: dict[str, str], arrival: dict[str, str]) -> list[dict]:
     rows = []
     route_id = arrival.get("routeId", "")
@@ -256,15 +282,21 @@ def collect_once(
         selected_routes = {name: ROUTES[name] for name in route_names}
 
     for route_name, route_id in selected_routes.items():
+        if not is_within_service_window(route_name, collected_at):
+            start, end = SERVICE_WINDOWS[route_name]
+            log(f"route={route_name} skipped=outside_service_window window={start}-{end}")
+            continue
+
         try:
             stations = get_route_stations(route_id)
         except Exception as exc:  # noqa: BLE001 - collector should keep other routes alive.
             log(f"route={route_name} station_list_error={exc}")
             continue
 
-        selected_stations = stations
+        service_stations = [station for station in stations if not is_pass_through_station(station)]
+        selected_stations = service_stations
         if first_stops_only:
-            selected_stations = stations[: DEFAULT_STATION_LIMITS.get(route_name, 12)]
+            selected_stations = service_stations[: DEFAULT_STATION_LIMITS.get(route_name, 12)]
         if max_stations_per_route is not None:
             selected_stations = selected_stations[:max_stations_per_route]
 
@@ -289,7 +321,7 @@ def collect_once(
         insert_rows(conn, route_rows)
         total_rows += len(route_rows)
         log(
-            f"route={route_name} stations={len(stations)} checked={len(selected_stations)} "
+            f"route={route_name} stations={len(stations)} service_stations={len(service_stations)} checked={len(selected_stations)} "
             f"inserted={len(route_rows)} quota_exceeded={quota_exceeded}"
         )
         if quota_exceeded:

@@ -101,6 +101,8 @@ Current low-call collector mode:
 - `M4130`: first 14 stops
 - `G6009`: first 14 stops
 - `6002`: first 18 stops
+- Pass-through stations with `(경유)` in the name are excluded.
+- Calls are skipped outside each route's first-to-last bus window.
 - Arrival calls per batch: `58`
 - Route station list calls per batch: `4`
 - Total calls per batch: about `62`
@@ -109,6 +111,13 @@ Current low-call collector mode:
 - Estimated daily calls: `62 * 144 = 8,928`
 
 This leaves roughly `1,000+` calls/day as buffer for retries, manual checks, and weather collection.
+
+Service windows currently configured from Gyeonggi route info:
+
+- `M4137`: `05:00` to `00:10`
+- `M4130`: `05:00` to `00:10`
+- `G6009`: `05:10` to `00:00`
+- `6002`: `05:00` to `23:55`
 
 ## Weather Data Plan
 
