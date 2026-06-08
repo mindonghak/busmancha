@@ -59,3 +59,31 @@
 & 'C:\Users\dongh\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' scripts/verify_api_fields.py gyeonggi-route-search --route-name M4137
 & 'C:\Users\dongh\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' scripts/verify_api_fields.py gyeonggi-location --route-id <ROUTE_ID>
 ```
+
+## Collector
+
+현재 PostgreSQL 대신 로컬 SQLite 파일에 실제 데이터를 먼저 쌓습니다.
+
+- DB: `data/busmancha.sqlite3`
+- Log: `data/collector.log`
+- 수집 대상: `M4137`, `M4130`, `G6009`, 화성 `6002`
+
+1회 수집:
+
+```powershell
+& 'C:\Users\dongh\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' scripts/collector.py --once
+```
+
+특정 노선만 1회 수집:
+
+```powershell
+& 'C:\Users\dongh\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' scripts/collector.py --once --routes M4137
+```
+
+반복 수집:
+
+```powershell
+& 'C:\Users\dongh\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' scripts/collector.py --interval-seconds 300
+```
+
+현재 Collector는 `노선 정류장 목록 -> 정류장별 도착정보` 방식으로 동작합니다.
