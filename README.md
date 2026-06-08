@@ -86,4 +86,10 @@
 & 'C:\Users\dongh\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' scripts/collector.py --interval-seconds 300
 ```
 
+API 호출 한도를 아끼는 반복 수집:
+
+```powershell
+& 'C:\Users\dongh\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' scripts/collector.py --interval-seconds 1800 --first-stops-only
+```
+
 현재 Collector는 `노선 정류장 목록 -> 정류장별 도착정보` 방식으로 동작합니다.
