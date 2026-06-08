@@ -173,6 +173,33 @@ def search_gyeonggi_route(route_name: str) -> dict:
     }
 
 
+def list_gyeonggi_route_stations(route_id: str) -> dict:
+    key = env("GYEONGGI_SERVICE_KEY")
+    if not key:
+        raise SystemExit("GYEONGGI_SERVICE_KEY is required.")
+
+    url = "https://apis.data.go.kr/6410000/busrouteservice/v2/getBusRouteStationListv2"
+    payload = fetch_text(url, {"serviceKey": key, "routeId": route_id, "format": "xml"})
+    sample_path = save_sample("gyeonggi_station_list", route_id, payload)
+    rows = xml_items(payload, "busRouteStationList")
+    fields = [
+        "routeId",
+        "stationId",
+        "stationSeq",
+        "stationName",
+        "mobileNo",
+        "regionName",
+        "turnYn",
+    ]
+    return {
+        "provider": "gyeonggi_station_list",
+        "route_id": route_id,
+        "sample_path": str(sample_path),
+        "stations": rows,
+        **summarize_rows(rows, fields),
+    }
+
+
 def validate_gyeonggi_arrival(station_id: str, route_id: str, sta_order: str) -> dict:
     key = env("GYEONGGI_SERVICE_KEY")
     if not key:
@@ -214,6 +241,54 @@ def validate_gyeonggi_arrival(station_id: str, route_id: str, sta_order: str) ->
         "sta_order": sta_order,
         "sample_path": str(sample_path),
         **summarize_rows(rows, fields),
+    }
+
+
+def scan_gyeonggi_arrivals(route_id: str, limit: int = 80) -> dict:
+    stations_result = list_gyeonggi_route_stations(route_id)
+    stations = stations_result["stations"][:limit]
+    checked = []
+    usable = []
+    errors = []
+
+    for station in stations:
+        station_id = station.get("stationId", "")
+        sta_order = station.get("stationSeq", "")
+        station_name = station.get("stationName", "")
+        if not station_id or not sta_order:
+            continue
+        try:
+            result = validate_gyeonggi_arrival(station_id, route_id, sta_order)
+        except Exception as exc:  # noqa: BLE001 - validation tool reports per-stop failures.
+            errors.append({"stationId": station_id, "staOrder": sta_order, "stationName": station_name, "error": str(exc)})
+            continue
+
+        fields = result["fields"]
+        row = {
+            "stationId": station_id,
+            "staOrder": sta_order,
+            "stationName": station_name,
+            "vehId1": fields["vehId1"]["sample_values"][:1],
+            "vehId2": fields["vehId2"]["sample_values"][:1],
+            "remainSeatCnt1": fields["remainSeatCnt1"]["sample_values"][:1],
+            "remainSeatCnt2": fields["remainSeatCnt2"]["sample_values"][:1],
+            "predictTimeSec1": fields["predictTimeSec1"]["sample_values"][:1],
+            "predictTimeSec2": fields["predictTimeSec2"]["sample_values"][:1],
+            "flag": fields["flag"]["sample_values"][:1],
+        }
+        checked.append(row)
+        if fields["remainSeatCnt1"]["usable_count"] or fields["remainSeatCnt2"]["usable_count"]:
+            usable.append(row)
+
+    return {
+        "provider": "gyeonggi_arrival_scan",
+        "route_id": route_id,
+        "station_count": len(stations_result["stations"]),
+        "checked_count": len(checked),
+        "usable_count": len(usable),
+        "usable": usable[:20],
+        "checked_sample": checked[:20],
+        "errors": errors[:10],
     }
 
 
@@ -266,10 +341,17 @@ def main() -> int:
     gg_search = subparsers.add_parser("gyeonggi-route-search")
     gg_search.add_argument("--route-name", required=True)
 
+    gg_stations = subparsers.add_parser("gyeonggi-stations")
+    gg_stations.add_argument("--route-id", required=True)
+
     gg_arr = subparsers.add_parser("gyeonggi-arrival")
     gg_arr.add_argument("--station-id", required=True)
     gg_arr.add_argument("--route-id", required=True)
     gg_arr.add_argument("--sta-order", required=True)
+
+    gg_scan = subparsers.add_parser("gyeonggi-arrival-scan")
+    gg_scan.add_argument("--route-id", required=True)
+    gg_scan.add_argument("--limit", type=int, default=80)
 
     incheon = subparsers.add_parser("incheon")
     incheon.add_argument("--bstop-id", default=env("INCHEON_BSTOP_ID"))
@@ -280,10 +362,14 @@ def main() -> int:
         result = validate_seoul(args.route_id)
     elif args.provider == "gyeonggi-route-search":
         result = search_gyeonggi_route(args.route_name)
+    elif args.provider == "gyeonggi-stations":
+        result = list_gyeonggi_route_stations(args.route_id)
     elif args.provider == "gyeonggi-location":
         result = validate_gyeonggi_location(args.route_id)
     elif args.provider == "gyeonggi-arrival":
         result = validate_gyeonggi_arrival(args.station_id, args.route_id, args.sta_order)
+    elif args.provider == "gyeonggi-arrival-scan":
+        result = scan_gyeonggi_arrivals(args.route_id, args.limit)
     elif args.provider == "incheon":
         if not args.bstop_id:
             raise SystemExit("--bstop-id or INCHEON_BSTOP_ID is required.")
