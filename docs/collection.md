@@ -90,3 +90,51 @@ CREATE TABLE seat_history (
 - `remainSeatCnt2=0` is ignored unless `vehId2` exists.
 - The first implementation intentionally stores raw-ish rows instead of summarized aggregates.
 - SQLite is a temporary local store. The same shape can be migrated to PostgreSQL once PostgreSQL is installed or provisioned.
+
+## Current Quota Plan
+
+Operating account daily quota: `10,000` calls/day.
+
+Current low-call collector mode:
+
+- `M4137`: first 12 stops
+- `M4130`: first 14 stops
+- `G6009`: first 14 stops
+- `6002`: first 18 stops
+- Arrival calls per batch: `58`
+- Route station list calls per batch: `4`
+- Total calls per batch: about `62`
+- Batch interval: `600` seconds
+- Batches per day: `144`
+- Estimated daily calls: `62 * 144 = 8,928`
+
+This leaves roughly `1,000+` calls/day as buffer for retries, manual checks, and weather collection.
+
+## Weather Data Plan
+
+Use the official `기상청_단기예보 조회서비스` from the public data portal.
+
+Recommended endpoints:
+
+- `getUltraSrtNcst`: current ultra-short-term observed weather
+- `getUltraSrtFcst`: ultra-short-term forecast
+- `getVilageFcst`: short-term forecast
+
+Useful weather fields:
+
+- `T1H`: temperature
+- `RN1`: 1-hour precipitation
+- `REH`: humidity
+- `WSD`: wind speed
+- `PTY`: precipitation type
+- `SKY`: sky condition, forecast endpoint
+- `POP`: precipitation probability, forecast endpoint
+
+Initial weather grid points:
+
+- Dongtan/Hwaseong boarding area
+- Gangnam area
+- Seoul Station area
+- Jamsil area
+
+Weather does not need to be collected per bus stop. A few regional grid points every 10 to 30 minutes should be enough for correlation analysis.
