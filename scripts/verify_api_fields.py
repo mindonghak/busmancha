@@ -4,6 +4,7 @@ import os
 import sys
 import urllib.parse
 import urllib.request
+from urllib.error import HTTPError
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,6 +14,19 @@ ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_DIR = ROOT / "data" / "api_samples"
 
 
+def load_dotenv() -> None:
+    path = ROOT / ".env"
+    if not path.exists():
+        return
+
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
 def env(name: str) -> str:
     return os.environ.get(name, "").strip()
 
@@ -20,8 +34,12 @@ def env(name: str) -> str:
 def fetch_text(url: str, params: dict[str, str], timeout: int = 20) -> str:
     query = urllib.parse.urlencode(params, doseq=True, safe="%")
     request = urllib.request.Request(f"{url}?{query}", headers={"User-Agent": "busmancha-api-validator/0.1"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return response.read().decode("utf-8", errors="replace")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {error.code} from API: {body[:500]}") from error
 
 
 def xml_items(text: str, item_tag: str = "itemList") -> list[dict[str, str]]:
@@ -234,6 +252,8 @@ def validate_incheon_station(bstop_id: str) -> dict:
 
 
 def main() -> int:
+    load_dotenv()
+
     parser = argparse.ArgumentParser(description="Validate bus seat-related fields from official APIs.")
     subparsers = parser.add_subparsers(dest="provider", required=True)
 

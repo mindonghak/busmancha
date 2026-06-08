@@ -42,6 +42,8 @@
 
 자세한 검증 계획은 [docs/api-validation.md](docs/api-validation.md)를 봅니다.
 
+현재 1차 실제 API 호출 결과는 [docs/validation-results.md](docs/validation-results.md)에 기록합니다.
+
 ## Local Commands
 
 이 환경에서는 `python` 명령이 바로 잡혀 있지 않을 수 있습니다. Codex 번들 Python 기준 실행 예시는 다음과 같습니다.
