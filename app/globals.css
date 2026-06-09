@@ -245,6 +245,10 @@ select {
   margin-top: -4px;
 }
 
+.resultTabs {
+  margin-bottom: 0;
+}
+
 .panel {
   padding: 18px;
 }

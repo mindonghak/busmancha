@@ -50,6 +50,7 @@ type StatsResponse = {
 type MainTab = "search" | "analysis";
 type AnalysisMode = "station" | "time" | "weekday" | "weather";
 type WeatherAnalysisMode = "precipitation" | "temperature";
+type SearchResultMode = "summary" | "station" | "time" | "weekday" | "weather";
 
 const allValue = "전체";
 const mainTabs: { id: MainTab; label: string }[] = [
@@ -236,6 +237,9 @@ export default function DashboardClient() {
             {searchStats ? (
               <SearchResult
                 summary={searchStats.summary}
+                byTime={searchStats.byTime}
+                byWeekday={searchStats.byWeekday}
+                byWeather={searchStats.byWeather}
                 byStation={searchStats.filteredByStation}
                 route={route}
                 weekday={weekday}
@@ -313,6 +317,9 @@ function Filter({
 
 function SearchResult({
   summary,
+  byTime,
+  byWeekday,
+  byWeather,
   byStation,
   route,
   weekday,
@@ -321,6 +328,9 @@ function SearchResult({
   weather,
 }: {
   summary: Summary;
+  byTime: GroupRow[];
+  byWeekday: GroupRow[];
+  byWeather: GroupRow[];
   byStation: GroupRow[];
   route: string;
   weekday: string;
@@ -328,6 +338,22 @@ function SearchResult({
   station: string;
   weather: string;
 }) {
+  const resultModes = useMemo(() => {
+    const modes: { id: SearchResultMode; label: string }[] = [{ id: "summary", label: "전체 통계" }];
+    if (station === allValue) modes.push({ id: "station", label: "정류장별" });
+    if (time === allValue) modes.push({ id: "time", label: "시간대별" });
+    if (weekday === allValue) modes.push({ id: "weekday", label: "요일별" });
+    if (weather === allValue) modes.push({ id: "weather", label: "날씨별" });
+    return modes;
+  }, [station, time, weekday, weather]);
+  const [mode, setMode] = useState<SearchResultMode>("summary");
+
+  useEffect(() => {
+    if (!resultModes.some((item) => item.id === mode)) {
+      setMode("summary");
+    }
+  }, [mode, resultModes]);
+
   return (
     <>
       <section className="panel noTopPadding">
@@ -344,21 +370,64 @@ function SearchResult({
           <span>정류장: {station}</span>
           <span>날씨: {weather}</span>
         </div>
-        <div className="summaryStrip">
-          <Metric label="표본" value={`${summary.sample_count ?? "0"}건`} />
-          <Metric label="평균 잔여좌석" value={seatText(summary.avg_seat)} />
-          <Metric label="만차확률" value={`${summary.full_probability ?? "0"}%`} />
-          <Metric label="평균 도착예정" value={etaText(summary.avg_eta_seconds)} />
-        </div>
+        <nav className="subTabs resultTabs" aria-label="검색 결과 보기">
+          {resultModes.map((item) => (
+            <button className={mode === item.id ? "active" : ""} key={item.id} onClick={() => setMode(item.id)}>
+              {item.label}
+            </button>
+          ))}
+        </nav>
       </section>
-      <div>
+
+      {mode === "summary" ? (
+        <section className="panel tablePanel">
+          <div className="sectionHead compact">
+            <div>
+              <p className="eyebrow">전체 통계</p>
+              <h2>선택 조건 전체 통계값</h2>
+            </div>
+          </div>
+          <div className="summaryStrip">
+            <Metric label="표본" value={`${summary.sample_count ?? "0"}건`} />
+            <Metric label="평균 잔여좌석" value={seatText(summary.avg_seat)} />
+            <Metric label="만차확률" value={`${summary.full_probability ?? "0"}%`} />
+            <Metric label="평균 도착예정" value={etaText(summary.avg_eta_seconds)} />
+          </div>
+        </section>
+      ) : null}
+
+      {mode === "station" ? (
         <AnalysisTable
           title="정류장별 결과"
           description="선택한 조건을 모두 반영한 정류장별 결과입니다. 정류장을 전체로 두면 해당 버스의 정류장이 모두 표시됩니다."
           columns={["정류장", "평균 잔여좌석", "최소", "만차확률", "표본"]}
           rows={byStation.map(rowToCells)}
         />
-      </div>
+      ) : null}
+      {mode === "time" ? (
+        <AnalysisTable
+          title="시간대별 결과"
+          description="시간을 전체로 둔 검색 결과를 시간대별로 나누어 보여줍니다."
+          columns={["시간", "평균 잔여좌석", "최소", "만차확률", "표본"]}
+          rows={byTime.map(rowToCells)}
+        />
+      ) : null}
+      {mode === "weekday" ? (
+        <AnalysisTable
+          title="요일별 결과"
+          description="요일을 전체로 둔 검색 결과를 요일별로 나누어 보여줍니다."
+          columns={["요일", "평균 잔여좌석", "최소", "만차확률", "표본"]}
+          rows={byWeekday.map(rowToCells)}
+        />
+      ) : null}
+      {mode === "weather" ? (
+        <AnalysisTable
+          title="날씨별 결과"
+          description="날씨를 전체로 둔 검색 결과를 강남 기준 날씨별로 나누어 보여줍니다."
+          columns={["날씨", "평균 잔여좌석", "최소", "만차확률", "표본"]}
+          rows={byWeather.map(rowToCells)}
+        />
+      ) : null}
     </>
   );
 }
