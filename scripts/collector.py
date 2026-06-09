@@ -121,6 +121,8 @@ def init_db(conn: sqlite3.Connection) -> None:
             station_id TEXT NOT NULL,
             station_name TEXT NOT NULL,
             station_seq INTEGER NOT NULL,
+            weather_area_key TEXT,
+            weather_area_name TEXT,
             vehicle_id TEXT NOT NULL,
             plate_no TEXT,
             arrival_order INTEGER NOT NULL,
@@ -131,9 +133,12 @@ def init_db(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    ensure_column(conn, "seat_history", "weather_area_key", "TEXT")
+    ensure_column(conn, "seat_history", "weather_area_name", "TEXT")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_seat_history_collected_at ON seat_history(collected_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_seat_history_route_station ON seat_history(route_id, station_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_seat_history_service_time ON seat_history(service_date, time_hhmm)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_seat_history_weather_area ON seat_history(weather_area_key)")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS weather_history (
@@ -158,6 +163,12 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_weather_history_observed_at ON weather_history(observed_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_weather_history_area_time ON weather_history(area_key, observed_at)")
     conn.commit()
+
+
+def ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, column_type: str) -> None:
+    columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table_name})")}
+    if column_name not in columns:
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
 
 
 def get_route_stations(route_id: str) -> list[dict[str, str]]:
@@ -233,6 +244,29 @@ def is_within_service_window(route_name: str, now: datetime) -> bool:
 
 def is_pass_through_station(station: dict[str, str]) -> bool:
     return "(경유)" in station.get("stationName", "")
+
+
+def weather_area_for_station(route_name: str, station: dict[str, str]) -> tuple[str, str]:
+    station_name = station.get("stationName", "")
+    region_name = station.get("regionName", "")
+
+    if any(token in station_name for token in ("잠실",)):
+        key = "jamsil"
+    elif any(token in station_name for token in ("강남", "양재", "뱅뱅", "매헌", "서초")):
+        key = "gangnam"
+    elif any(token in station_name for token in ("서울역", "시청", "명동", "신한은행", "국가인권")):
+        key = "seoul_station"
+    elif region_name == "서울":
+        if route_name == "G6009":
+            key = "jamsil"
+        elif route_name == "6002":
+            key = "gangnam"
+        else:
+            key = "seoul_station"
+    else:
+        key = "dongtan_hwaseong"
+
+    return key, str(WEATHER_POINTS[key]["name"])
 
 
 def any_route_in_service(route_names: list[str], now: datetime) -> bool:
@@ -349,6 +383,7 @@ def rows_from_arrival(collected_at: datetime, station: dict[str, str], arrival: 
     route_name = arrival.get("routeName", "")
     route_type_cd = arrival.get("routeTypeCd", "")
     flag = arrival.get("flag", "")
+    weather_area_key, weather_area_name = weather_area_for_station(route_name, station)
 
     for order in (1, 2):
         vehicle_id = arrival.get(f"vehId{order}", "")
@@ -372,6 +407,8 @@ def rows_from_arrival(collected_at: datetime, station: dict[str, str], arrival: 
                 "station_id": station.get("stationId", ""),
                 "station_name": station.get("stationName", ""),
                 "station_seq": parse_int(station.get("stationSeq")) or 0,
+                "weather_area_key": weather_area_key,
+                "weather_area_name": weather_area_name,
                 "vehicle_id": vehicle_id,
                 "plate_no": arrival.get(f"plateNo{order}", ""),
                 "arrival_order": order,
@@ -402,6 +439,8 @@ def insert_rows(conn: sqlite3.Connection, rows: list[dict]) -> None:
             station_id,
             station_name,
             station_seq,
+            weather_area_key,
+            weather_area_name,
             vehicle_id,
             plate_no,
             arrival_order,
@@ -421,6 +460,8 @@ def insert_rows(conn: sqlite3.Connection, rows: list[dict]) -> None:
             :station_id,
             :station_name,
             :station_seq,
+            :weather_area_key,
+            :weather_area_name,
             :vehicle_id,
             :plate_no,
             :arrival_order,

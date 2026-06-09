@@ -85,6 +85,42 @@ CREATE TABLE seat_history (
 );
 ```
 
+## Station To Weather Mapping
+
+Each new `seat_history` row stores:
+
+- `weather_area_key`
+- `weather_area_name`
+
+Mapping rules:
+
+- Station names containing `잠실` -> `jamsil`
+- Station names containing `강남`, `양재`, `뱅뱅`, `매헌`, or `서초` -> `gangnam`
+- Station names containing `서울역`, `시청`, `명동`, `신한은행`, or `국가인권` -> `seoul_station`
+- Other Seoul-region stations:
+  - `G6009` -> `jamsil`
+  - `6002` -> `gangnam`
+  - `M4137`, `M4130` -> `seoul_station`
+- All remaining stations -> `dongtan_hwaseong`
+
+This keeps bus-seat rows joinable to the nearest regional weather observations without calling weather APIs per stop.
+
+## Planned Analysis UI
+
+The web UI is structured around two ideas:
+
+- Direct filters: route, weekday, time, station, weather
+- Comparison views for unselected filters:
+  - station view
+  - time view
+  - weather view
+
+Example:
+
+- If weather is not selected, show seat statistics grouped by weather.
+- If time is not selected, show seat statistics grouped by time bucket.
+- If station is not selected, show seat statistics grouped by station.
+
 ## Notes
 
 - `is_full` is derived as `remain_seat <= 0` only when a vehicle exists.

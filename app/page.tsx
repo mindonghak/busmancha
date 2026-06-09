@@ -1,23 +1,45 @@
-const routeSummary = [
-  { route: "M4137", rows: 317, avgSeat: 32.2, minSeat: 18, maxSeat: 67, latest: "2026-06-08 13:19" },
-  { route: "M4130", rows: 405, avgSeat: 36.1, minSeat: 18, maxSeat: 52, latest: "2026-06-08 13:19" },
-  { route: "G6009", rows: 260, avgSeat: 33.8, minSeat: -1, maxSeat: 40, latest: "2026-06-08 13:19" },
-  { route: "6002", rows: 426, avgSeat: 39.5, minSeat: 15, maxSeat: 64, latest: "2026-06-08 13:14" },
+const summaryStats = [
+  { label: "평균 잔여좌석", value: "18.6석", note: "선택 조건 기준" },
+  { label: "만차확률", value: "12%", note: "잔여좌석 0석 기준" },
+  { label: "중앙값", value: "17석", note: "이상치 영향 완화" },
+  { label: "표본 수", value: "4,312행", note: "수집 중" },
 ];
 
-const stationRisk = [
-  { route: "M4130", station: "기흥휴게소(경유)", avgSeat: 11, minSeat: 11, eta: "80초" },
-  { route: "M4130", station: "양재IC(경유)", avgSeat: 24, minSeat: 24, eta: "9초" },
-  { route: "M4137", station: "금토JC(경유)", avgSeat: 23, minSeat: 23, eta: "68초" },
-  { route: "6002", station: "신분당선강남역(중)", avgSeat: 18.3, minSeat: 15, eta: "최근 샘플" },
-  { route: "G6009", station: "잠실광역환승센터", avgSeat: 33.8, minSeat: 25, eta: "최근 샘플" },
+const filters = [
+  { label: "버스번호", value: "M4130" },
+  { label: "요일", value: "월요일" },
+  { label: "시간", value: "07:30" },
+  { label: "정류장", value: "반도3차.금강1차" },
+  { label: "날씨", value: "전체" },
 ];
 
-const metrics = [
-  { label: "수집 노선", value: "4개" },
-  { label: "저장 샘플", value: "1,408행" },
-  { label: "수집 방식", value: "공식 API" },
-  { label: "저장 주기", value: "조정 중" },
+const stationRows = [
+  { station: "호수자이파밀리에.아이원", avg: 34.1, full: "2%", samples: 116 },
+  { station: "반도3차.금강1차", avg: 18.6, full: "12%", samples: 98 },
+  { station: "한화.린스트라우스", avg: 14.2, full: "19%", samples: 84 },
+  { station: "현대트랜시스", avg: 9.8, full: "31%", samples: 72 },
+];
+
+const timeRows = [
+  { time: "07:00", avg: 28.4, full: "4%" },
+  { time: "07:10", avg: 21.7, full: "9%" },
+  { time: "07:20", avg: 15.2, full: "17%" },
+  { time: "07:30", avg: 8.9, full: "34%" },
+  { time: "07:40", avg: 4.1, full: "58%" },
+];
+
+const weatherRows = [
+  { weather: "맑음", avg: 19.8, full: "10%", sample: "동탄/화성 22.1도" },
+  { weather: "흐림", avg: 16.3, full: "18%", sample: "습도 67%" },
+  { weather: "비", avg: 10.4, full: "39%", sample: "강수 1mm 이상" },
+  { weather: "강풍", avg: 13.7, full: "24%", sample: "풍속 4m/s 이상" },
+];
+
+const viewModes = [
+  "직접 설정",
+  "정류장별 보기",
+  "시간대별 보기",
+  "날씨별 보기",
 ];
 
 export default function Home() {
@@ -30,106 +52,148 @@ export default function Home() {
         </div>
         <div className="status">
           <span className="dot" />
-          실제 API 검증 완료
+          버스 + 날씨 수집 중
         </div>
       </header>
 
-      <section className="intro">
+      <section className="hero">
         <div>
-          <h2>어느 노선이, 어느 시간대에, 어느 정류장에서 만차가 되는지 분석합니다.</h2>
+          <h2>조건을 고르면 과거 좌석 패턴을 보여주고, 비워둔 조건은 비교표로 펼칩니다.</h2>
           <p>
-            경기 광역버스 공식 API에서 수집한 잔여좌석, 차량, 정류장, 도착예정시간 데이터를 기반으로
-            노선별 혼잡 패턴을 장기 분석하는 웹 서비스입니다.
+            버스번호, 요일, 시간, 정류장, 날씨를 조합해 평균 잔여좌석과 만차확률을 조회합니다.
+            날씨를 고르지 않으면 날씨별 차이를, 시간을 고르지 않으면 시간대별 차이를 함께 보여줍니다.
           </p>
         </div>
         <div className="metricGrid">
-          {metrics.map((metric) => (
-            <div className="metric" key={metric.label}>
-              <span>{metric.label}</span>
-              <strong>{metric.value}</strong>
+          {summaryStats.map((stat) => (
+            <div className="metric" key={stat.label}>
+              <span>{stat.label}</span>
+              <strong>{stat.value}</strong>
+              <small>{stat.note}</small>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="panel">
-        <div className="sectionHead">
-          <div>
-            <p className="eyebrow">최근 수집 샘플</p>
-            <h2>노선별 잔여좌석 요약</h2>
+      <section className="workspace">
+        <aside className="filterPanel">
+          <div className="sectionHead compact">
+            <div>
+              <p className="eyebrow">직접 설정</p>
+              <h2>조회 조건</h2>
+            </div>
           </div>
-          <p>대상: M4137, M4130, G6009, 화성 6002</p>
-        </div>
-        <div className="routeGrid">
-          {routeSummary.map((route) => (
-            <article className="routeCard" key={route.route}>
-              <div className="routeTitle">
-                <h3>{route.route}</h3>
-                <span>{route.rows.toLocaleString()}행</span>
-              </div>
-              <div className="seatNumber">{route.avgSeat}</div>
-              <p>평균 잔여좌석</p>
-              <div className="range">
-                <span>최저 {route.minSeat}</span>
-                <span>최고 {route.maxSeat}</span>
-              </div>
-              <small>최근 수집 {route.latest}</small>
-            </article>
-          ))}
-        </div>
-      </section>
+          <div className="filterList">
+            {filters.map((filter) => (
+              <label key={filter.label}>
+                <span>{filter.label}</span>
+                <select defaultValue={filter.value}>
+                  <option>{filter.value}</option>
+                  <option>전체</option>
+                </select>
+              </label>
+            ))}
+          </div>
+          <button className="primaryButton">통계 조회</button>
+          <p className="helperText">
+            선택하지 않은 항목은 자동으로 비교 축이 됩니다. 예: 날씨 전체 선택 시 날씨별 좌석 차이 표시.
+          </p>
+        </aside>
 
-      <section className="panel">
-        <div className="sectionHead">
-          <div>
-            <p className="eyebrow">정류장별 분석 예시</p>
-            <h2>잔여좌석이 낮게 관측된 지점</h2>
-          </div>
-          <p>초기 샘플 기준, 장기 수집 후 만차확률로 확장</p>
-        </div>
-        <div className="tableWrap">
-          <table>
-            <thead>
-              <tr>
-                <th>노선</th>
-                <th>정류장</th>
-                <th>평균 잔여좌석</th>
-                <th>최저 잔여좌석</th>
-                <th>ETA</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stationRisk.map((row) => (
-                <tr key={`${row.route}-${row.station}`}>
-                  <td>{row.route}</td>
-                  <td>{row.station}</td>
-                  <td>{row.avgSeat}</td>
-                  <td>{row.minSeat}</td>
-                  <td>{row.eta}</td>
-                </tr>
+        <section className="results">
+          <nav className="tabs" aria-label="보기 모드">
+            {viewModes.map((mode, index) => (
+              <button className={index === 0 ? "active" : ""} key={mode}>
+                {mode}
+              </button>
+            ))}
+          </nav>
+
+          <div className="panel noTopPadding">
+            <div className="sectionHead">
+              <div>
+                <p className="eyebrow">조건 기반 요약</p>
+                <h2>M4130 / 월요일 / 07:30 / 반도3차.금강1차</h2>
+              </div>
+              <p>날씨: 전체 비교</p>
+            </div>
+            <div className="summaryStrip">
+              {summaryStats.map((stat) => (
+                <div key={stat.label}>
+                  <span>{stat.label}</span>
+                  <strong>{stat.value}</strong>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+            </div>
+          </div>
 
-      <section className="workflow">
-        <div>
-          <span>1</span>
-          <strong>공식 API 수집</strong>
-          <p>노선 정류장 목록과 도착정보 API를 호출합니다.</p>
-        </div>
-        <div>
-          <span>2</span>
-          <strong>원본 데이터 저장</strong>
-          <p>수집시각, 요일, 정류장, 차량, 잔여좌석, ETA를 저장합니다.</p>
-        </div>
-        <div>
-          <span>3</span>
-          <strong>만차 패턴 분석</strong>
-          <p>장기 데이터가 쌓이면 시간대별 만차확률을 계산합니다.</p>
-        </div>
+          <div className="splitGrid">
+            <AnalysisTable
+              title="정류장별 보기"
+              description="정류장을 고르지 않았을 때 노선 내 정류장별 차이를 보여줍니다."
+              columns={["정류장", "평균 잔여좌석", "만차확률", "표본"]}
+              rows={stationRows.map((row) => [row.station, `${row.avg}석`, row.full, `${row.samples}건`])}
+            />
+            <AnalysisTable
+              title="시간대별 보기"
+              description="시간을 고르지 않았을 때 10분 단위 좌석 변화를 보여줍니다."
+              columns={["시간", "평균 잔여좌석", "만차확률"]}
+              rows={timeRows.map((row) => [row.time, `${row.avg}석`, row.full])}
+            />
+          </div>
+
+          <AnalysisTable
+            title="날씨별 보기"
+            description="날씨를 고르지 않았을 때 기상 조건별 좌석 차이를 보여줍니다."
+            columns={["날씨", "평균 잔여좌석", "만차확률", "날씨 샘플"]}
+            rows={weatherRows.map((row) => [row.weather, `${row.avg}석`, row.full, row.sample])}
+          />
+        </section>
       </section>
     </main>
+  );
+}
+
+function AnalysisTable({
+  title,
+  description,
+  columns,
+  rows,
+}: {
+  title: string;
+  description: string;
+  columns: string[];
+  rows: string[][];
+}) {
+  return (
+    <section className="panel tablePanel">
+      <div className="sectionHead compact">
+        <div>
+          <p className="eyebrow">{title}</p>
+          <h2>{title}</h2>
+        </div>
+        <p>{description}</p>
+      </div>
+      <div className="tableWrap">
+        <table>
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th key={column}>{column}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.join("-")}>
+                {row.map((cell) => (
+                  <td key={cell}>{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
