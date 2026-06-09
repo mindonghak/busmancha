@@ -123,14 +123,8 @@ export default function DashboardClient() {
         setOptions(body);
         const firstRoute = body.routes?.[0] ?? "";
         setRoute(firstRoute);
-        setAnalysisRoute(firstRoute);
-        setAnalysisResultRoute(firstRoute);
-
-        const initialAnalysisStats = firstRoute
-          ? await fetchJson<StatsResponse>(`/api/stats?route=${encodeURIComponent(firstRoute)}`)
-          : null;
         if (!ignore) {
-          setAnalysisStats(initialAnalysisStats);
+          setAnalysisStats(null);
         }
       } catch (err) {
         if (!ignore) setError(err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다.");
@@ -161,13 +155,13 @@ export default function DashboardClient() {
     }
   };
 
-  const chooseAnalysisRoute = async (nextRoute: string) => {
-    setAnalysisRoute(nextRoute);
+  const submitAnalysis = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     try {
-      const body = await fetchAnalysisStats(nextRoute);
+      const body = await fetchAnalysisStats(analysisRoute);
       if (body) {
         setAnalysisStats(body);
-        setAnalysisResultRoute(nextRoute);
+        setAnalysisResultRoute(analysisRoute);
       }
       setLoading(false);
     } catch (err) {
@@ -262,16 +256,23 @@ export default function DashboardClient() {
               <p className="eyebrow">분석 조건</p>
               <h2>버스별 분석</h2>
             </div>
-            <label>
-              <span>버스번호</span>
-              <select value={analysisRoute} onChange={(event) => chooseAnalysisRoute(event.target.value)}>
-                {(options?.routes ?? []).map((item) => (
-                  <option key={item}>{item}</option>
-                ))}
-              </select>
-            </label>
+            <form className="analysisForm" onSubmit={submitAnalysis}>
+              <label>
+                <span>버스번호</span>
+                <select value={analysisRoute} onChange={(event) => setAnalysisRoute(event.target.value)}>
+                  <option value="">선택</option>
+                  {(options?.routes ?? []).map((item) => (
+                    <option key={item}>{item}</option>
+                  ))}
+                </select>
+              </label>
+              <button className="primaryButton inlineButton" type="submit" disabled={loading || !analysisRoute}>
+                {loading ? "불러오는 중" : "분석 조회"}
+              </button>
+            </form>
           </section>
 
+          {!analysisStats && !loading ? <div className="emptyState">버스번호를 선택한 뒤 분석 조회 버튼을 누르면 결과가 표시됩니다.</div> : null}
           {analysisStats ? (
             <AnalysisView
               mode={analysisMode}

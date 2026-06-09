@@ -263,18 +263,31 @@ select {
   align-items: end;
   display: grid;
   gap: 18px;
-  grid-template-columns: minmax(0, 1fr) 260px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
 }
 
-.analysisControls label {
+.analysisForm {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 120px;
+}
+
+.analysisControls label,
+.analysisForm label {
   display: grid;
   gap: 6px;
 }
 
-.analysisControls label span {
+.analysisControls label span,
+.analysisForm label span {
   color: #34444d;
   font-size: 13px;
   font-weight: 700;
+}
+
+.inlineButton {
+  margin-top: 0;
 }
 
 .analysisResults {
@@ -504,7 +517,8 @@ tr:last-child td {
   .heroText,
   .workspace,
   .splitGrid,
-  .analysisControls {
+  .analysisControls,
+  .analysisForm {
     grid-template-columns: 1fr;
   }
 
