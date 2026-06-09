@@ -7,6 +7,7 @@ PostgreSQL이 아직 로컬에 준비되어 있지 않아, 현재는 SQLite로 �
 - DB path: `data/busmancha.sqlite3`
 - Log path: `data/collector.log`
 - Provider: Gyeonggi
+- Weather provider: KMA ultra-short-term nowcast
 - Routes:
   - `M4137`
   - `M4130`
@@ -147,3 +148,34 @@ Initial weather grid points:
 - Jamsil area
 
 Weather does not need to be collected per bus stop. A few regional grid points every 10 to 30 minutes should be enough for correlation analysis.
+
+Current weather collection:
+
+- `동탄/화성`: `nx=62`, `ny=119`
+- `강남`: `nx=61`, `ny=125`
+- `서울역`: `nx=60`, `ny=126`
+- `잠실`: `nx=62`, `ny=126`
+- Collection interval: same as bus collector, currently 10 minutes
+- Current endpoint: `getUltraSrtNcst`
+
+Current SQLite weather table:
+
+```sql
+CREATE TABLE weather_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    collected_at TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    area_key TEXT NOT NULL,
+    area_name TEXT NOT NULL,
+    nx INTEGER NOT NULL,
+    ny INTEGER NOT NULL,
+    base_date TEXT NOT NULL,
+    base_time TEXT NOT NULL,
+    temperature REAL,
+    precipitation_1h REAL,
+    humidity INTEGER,
+    wind_speed REAL,
+    precipitation_type TEXT,
+    raw_payload TEXT
+);
+```

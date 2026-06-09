@@ -1,11 +1,12 @@
 import argparse
+import json
 import os
 import sqlite3
 import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.error import HTTPError
 
@@ -35,8 +36,16 @@ SERVICE_WINDOWS = {
     "6002": ("05:00", "23:55"),
 }
 
+WEATHER_POINTS = {
+    "dongtan_hwaseong": {"name": "동탄/화성", "nx": 62, "ny": 119},
+    "gangnam": {"name": "강남", "nx": 61, "ny": 125},
+    "seoul_station": {"name": "서울역", "nx": 60, "ny": 126},
+    "jamsil": {"name": "잠실", "nx": 62, "ny": 126},
+}
+
 GYEONGGI_ROUTE_STATIONS_URL = "https://apis.data.go.kr/6410000/busrouteservice/v2/getBusRouteStationListv2"
 GYEONGGI_ARRIVAL_URL = "https://apis.data.go.kr/6410000/busarrivalservice/v2/getBusArrivalItemv2"
+KMA_ULTRA_SHORT_NOWCAST_URL = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
 
 
 def load_dotenv() -> None:
@@ -56,6 +65,13 @@ def service_key() -> str:
     key = os.environ.get("GYEONGGI_SERVICE_KEY", "").strip()
     if not key:
         raise SystemExit("GYEONGGI_SERVICE_KEY is required in .env.")
+    return key
+
+
+def weather_service_key() -> str:
+    key = os.environ.get("WEATHER_SERVICE_KEY", "").strip()
+    if not key:
+        raise SystemExit("WEATHER_SERVICE_KEY is required in .env.")
     return key
 
 
@@ -118,6 +134,29 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_seat_history_collected_at ON seat_history(collected_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_seat_history_route_station ON seat_history(route_id, station_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_seat_history_service_time ON seat_history(service_date, time_hhmm)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS weather_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            collected_at TEXT NOT NULL,
+            observed_at TEXT NOT NULL,
+            area_key TEXT NOT NULL,
+            area_name TEXT NOT NULL,
+            nx INTEGER NOT NULL,
+            ny INTEGER NOT NULL,
+            base_date TEXT NOT NULL,
+            base_time TEXT NOT NULL,
+            temperature REAL,
+            precipitation_1h REAL,
+            humidity INTEGER,
+            wind_speed REAL,
+            precipitation_type TEXT,
+            raw_payload TEXT
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_weather_history_observed_at ON weather_history(observed_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_weather_history_area_time ON weather_history(area_key, observed_at)")
     conn.commit()
 
 
@@ -157,6 +196,26 @@ def parse_int(value: str | None) -> int | None:
         return None
 
 
+def parse_float(value: str | None) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def parse_precipitation(value: str | None) -> float | None:
+    if value is None or value == "":
+        return None
+    if value in {"강수없음", "0", "0.0"}:
+        return 0.0
+    if "1mm 미만" in value:
+        return 0.5
+    number = "".join(ch for ch in value if ch.isdigit() or ch == ".")
+    return parse_float(number)
+
+
 def parse_hhmm(value: str) -> int:
     hour, minute = value.split(":", 1)
     return int(hour) * 60 + int(minute)
@@ -174,6 +233,114 @@ def is_within_service_window(route_name: str, now: datetime) -> bool:
 
 def is_pass_through_station(station: dict[str, str]) -> bool:
     return "(경유)" in station.get("stationName", "")
+
+
+def any_route_in_service(route_names: list[str], now: datetime) -> bool:
+    return any(is_within_service_window(route_name, now) for route_name in route_names)
+
+
+def latest_weather_base(now: datetime) -> tuple[str, str, datetime]:
+    base = now - timedelta(minutes=45)
+    observed = base.replace(minute=0, second=0, microsecond=0)
+    return observed.strftime("%Y%m%d"), observed.strftime("%H%M"), observed
+
+
+def get_weather_nowcast(area: dict[str, int | str], now: datetime) -> dict:
+    base_date, base_time, observed_at = latest_weather_base(now)
+    payload = fetch_text(
+        KMA_ULTRA_SHORT_NOWCAST_URL,
+        {
+            "serviceKey": weather_service_key(),
+            "pageNo": "1",
+            "numOfRows": "100",
+            "dataType": "XML",
+            "base_date": base_date,
+            "base_time": base_time,
+            "nx": str(area["nx"]),
+            "ny": str(area["ny"]),
+        },
+    )
+    items = xml_items(payload, "item")
+    values = {item.get("category", ""): item.get("obsrValue", "") for item in items}
+    return {
+        "base_date": base_date,
+        "base_time": base_time,
+        "observed_at": observed_at.isoformat(timespec="seconds"),
+        "values": values,
+        "items": items,
+    }
+
+
+def collect_weather(conn: sqlite3.Connection, collected_at: datetime) -> int:
+    rows = []
+    for area_key, area in WEATHER_POINTS.items():
+        try:
+            result = get_weather_nowcast(area, collected_at)
+        except Exception as exc:  # noqa: BLE001 - weather should not stop bus collection.
+            log(f"weather area={area_key} error={exc}")
+            continue
+
+        values = result["values"]
+        rows.append(
+            {
+                "collected_at": collected_at.isoformat(timespec="seconds"),
+                "observed_at": result["observed_at"],
+                "area_key": area_key,
+                "area_name": area["name"],
+                "nx": area["nx"],
+                "ny": area["ny"],
+                "base_date": result["base_date"],
+                "base_time": result["base_time"],
+                "temperature": parse_float(values.get("T1H")),
+                "precipitation_1h": parse_precipitation(values.get("RN1")),
+                "humidity": parse_int(values.get("REH")),
+                "wind_speed": parse_float(values.get("WSD")),
+                "precipitation_type": values.get("PTY"),
+                "raw_payload": json.dumps(result["items"], ensure_ascii=False),
+            }
+        )
+
+    if rows:
+        conn.executemany(
+            """
+            INSERT INTO weather_history (
+                collected_at,
+                observed_at,
+                area_key,
+                area_name,
+                nx,
+                ny,
+                base_date,
+                base_time,
+                temperature,
+                precipitation_1h,
+                humidity,
+                wind_speed,
+                precipitation_type,
+                raw_payload
+            ) VALUES (
+                :collected_at,
+                :observed_at,
+                :area_key,
+                :area_name,
+                :nx,
+                :ny,
+                :base_date,
+                :base_time,
+                :temperature,
+                :precipitation_1h,
+                :humidity,
+                :wind_speed,
+                :precipitation_type,
+                :raw_payload
+            )
+            """,
+            rows,
+        )
+        conn.commit()
+
+    log(f"weather inserted={len(rows)}")
+    return len(rows)
 
 
 def rows_from_arrival(collected_at: datetime, station: dict[str, str], arrival: dict[str, str]) -> list[dict]:
@@ -274,12 +441,14 @@ def collect_once(
     route_names: list[str] | None = None,
     max_stations_per_route: int | None = None,
     first_stops_only: bool = False,
+    collect_weather_enabled: bool = True,
 ) -> int:
     collected_at = datetime.now()
     total_rows = 0
     selected_routes = ROUTES
     if route_names:
         selected_routes = {name: ROUTES[name] for name in route_names}
+    selected_route_names = list(selected_routes.keys())
 
     for route_name, route_id in selected_routes.items():
         if not is_within_service_window(route_name, collected_at):
@@ -327,7 +496,13 @@ def collect_once(
         if quota_exceeded:
             break
 
-    log(f"batch_complete inserted={total_rows}")
+    weather_rows = 0
+    if collect_weather_enabled and any_route_in_service(selected_route_names, collected_at):
+        weather_rows = collect_weather(conn, collected_at)
+    elif collect_weather_enabled:
+        log("weather skipped=outside_all_service_windows")
+
+    log(f"batch_complete inserted={total_rows} weather_inserted={weather_rows}")
     return total_rows
 
 
@@ -345,6 +520,7 @@ def main() -> int:
         action="store_true",
         help="Collect only early boarding stops for each route to reduce API calls.",
     )
+    parser.add_argument("--no-weather", action="store_true", help="Disable weather collection.")
     parser.add_argument(
         "--routes",
         default=",".join(ROUTES.keys()),
@@ -368,6 +544,7 @@ def main() -> int:
                 route_names,
                 args.max_stations_per_route,
                 args.first_stops_only,
+                not args.no_weather,
             )
             return 0
 
@@ -379,6 +556,7 @@ def main() -> int:
                 route_names,
                 args.max_stations_per_route,
                 args.first_stops_only,
+                not args.no_weather,
             )
             elapsed = time.time() - started
             sleep_for = max(0, args.interval_seconds - elapsed)
