@@ -74,6 +74,7 @@ export default function DashboardClient() {
   const [station, setStation] = useState(allValue);
   const [weather, setWeather] = useState(allValue);
   const [analysisRoute, setAnalysisRoute] = useState("");
+  const [analysisResultRoute, setAnalysisResultRoute] = useState("");
   const [activeTab, setActiveTab] = useState<MainTab>("search");
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("station");
   const [loading, setLoading] = useState(true);
@@ -123,6 +124,7 @@ export default function DashboardClient() {
         const firstRoute = body.routes?.[0] ?? "";
         setRoute(firstRoute);
         setAnalysisRoute(firstRoute);
+        setAnalysisResultRoute(firstRoute);
 
         const initialAnalysisStats = firstRoute
           ? await fetchJson<StatsResponse>(`/api/stats?route=${encodeURIComponent(firstRoute)}`)
@@ -160,11 +162,12 @@ export default function DashboardClient() {
   };
 
   const chooseAnalysisRoute = async (nextRoute: string) => {
+    setAnalysisRoute(nextRoute);
     try {
       const body = await fetchAnalysisStats(nextRoute);
       if (body) {
         setAnalysisStats(body);
-        setAnalysisRoute(nextRoute);
+        setAnalysisResultRoute(nextRoute);
       }
       setLoading(false);
     } catch (err) {
@@ -274,7 +277,7 @@ export default function DashboardClient() {
               mode={analysisMode}
               onModeChange={setAnalysisMode}
               stats={analysisStats}
-              route={analysisRoute}
+              route={analysisResultRoute}
             />
           ) : null}
         </section>
