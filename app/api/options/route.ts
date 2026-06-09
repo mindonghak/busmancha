@@ -13,6 +13,7 @@ export async function GET() {
         from seat_history
         where station_name is not null
           and station_name not like '%(경유)%'
+          and station_name not like '%(미정차)%'
         order by route_name, station_seq
         `
       ),

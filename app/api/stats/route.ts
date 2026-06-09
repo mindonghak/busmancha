@@ -55,7 +55,12 @@ const baseCte = `
 `;
 
 function buildWhere(params: URLSearchParams, skip: string | null = null) {
-  const clauses = ["remain_seat is not null", "remain_seat >= 0", "station_name not like '%(경유)%'"];
+  const clauses = [
+    "remain_seat is not null",
+    "remain_seat >= 0",
+    "station_name not like '%(경유)%'",
+    "station_name not like '%(미정차)%'",
+  ];
   const values: unknown[] = [];
 
   const add = (column: string, value: string) => {

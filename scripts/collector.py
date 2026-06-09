@@ -243,7 +243,8 @@ def is_within_service_window(route_name: str, now: datetime) -> bool:
 
 
 def is_pass_through_station(station: dict[str, str]) -> bool:
-    return "(경유)" in station.get("stationName", "")
+    station_name = station.get("stationName", "")
+    return "(경유)" in station_name or "(미정차)" in station_name
 
 
 def weather_area_for_station(route_name: str, station: dict[str, str]) -> tuple[str, str]:
