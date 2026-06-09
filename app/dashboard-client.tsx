@@ -14,7 +14,6 @@ type OptionsResponse = {
   weekdays: string[];
   times: string[];
   stations: StationOption[];
-  weatherAreas: string[];
   weatherConditions: string[];
 };
 
@@ -51,8 +50,8 @@ type AnalysisMode = "station" | "time" | "weekday" | "weather";
 
 const allValue = "전체";
 const mainTabs: { id: MainTab; label: string }[] = [
-  { id: "search", label: "검색 결과" },
-  { id: "analysis", label: "분석 보기" },
+  { id: "search", label: "검색" },
+  { id: "analysis", label: "분석" },
 ];
 const analysisTabs: { id: AnalysisMode; label: string }[] = [
   { id: "station", label: "정류장별" },
@@ -63,12 +62,14 @@ const analysisTabs: { id: AnalysisMode; label: string }[] = [
 
 export default function DashboardClient() {
   const [options, setOptions] = useState<OptionsResponse | null>(null);
-  const [stats, setStats] = useState<StatsResponse | null>(null);
+  const [searchStats, setSearchStats] = useState<StatsResponse | null>(null);
+  const [analysisStats, setAnalysisStats] = useState<StatsResponse | null>(null);
   const [route, setRoute] = useState(allValue);
   const [weekday, setWeekday] = useState(allValue);
   const [time, setTime] = useState(allValue);
   const [station, setStation] = useState(allValue);
   const [weather, setWeather] = useState(allValue);
+  const [analysisRoute, setAnalysisRoute] = useState("");
   const [activeTab, setActiveTab] = useState<MainTab>("search");
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("station");
   const [loading, setLoading] = useState(true);
@@ -79,29 +80,30 @@ export default function DashboardClient() {
     return options.stations.filter((item) => route === allValue || item.route_name === route);
   }, [options, route]);
 
-  const weatherOptions = useMemo(() => {
-    if (!options) return [];
-    return [...options.weatherConditions, ...options.weatherAreas];
-  }, [options]);
-
-  const fetchStats = async (nextRoute = route) => {
+  const fetchSearchStats = async () => {
     setLoading(true);
     setError(null);
 
     const params = new URLSearchParams();
-    if (nextRoute !== allValue) params.set("route", nextRoute);
+    if (route !== allValue) params.set("route", route);
     if (weekday !== allValue) params.set("weekday", weekday);
     if (time !== allValue) params.set("time", time);
     if (station !== allValue) params.set("station", station);
     if (weather !== allValue) params.set("weather", weather);
 
-    const response = await fetch(`/api/stats?${params.toString()}`, { cache: "no-store" });
-    const body = await response.json();
-    if (!response.ok) {
-      throw new Error(body.error ?? "통계를 불러오지 못했습니다.");
-    }
-    setStats(body);
+    const body = await fetchJson<StatsResponse>(`/api/stats?${params.toString()}`);
+    setSearchStats(body);
     setActiveTab("search");
+    setLoading(false);
+  };
+
+  const fetchAnalysisStats = async (nextRoute: string) => {
+    if (!nextRoute) return;
+    setLoading(true);
+    setError(null);
+    const params = new URLSearchParams({ route: nextRoute });
+    const body = await fetchJson<StatsResponse>(`/api/stats?${params.toString()}`);
+    setAnalysisStats(body);
     setLoading(false);
   };
 
@@ -111,21 +113,21 @@ export default function DashboardClient() {
     async function load() {
       try {
         setLoading(true);
-        const response = await fetch("/api/options", { cache: "no-store" });
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.error ?? "선택지를 불러오지 못했습니다.");
+        const body = await fetchJson<OptionsResponse>("/api/options");
         if (ignore) return;
 
         setOptions(body);
-        const firstRoute = body.routes?.[0] ?? allValue;
-        setRoute(firstRoute);
+        const firstRoute = body.routes?.[0] ?? "";
+        setAnalysisRoute(firstRoute);
 
-        const params = new URLSearchParams();
-        if (firstRoute !== allValue) params.set("route", firstRoute);
-        const statsResponse = await fetch(`/api/stats?${params.toString()}`, { cache: "no-store" });
-        const statsBody = await statsResponse.json();
-        if (!statsResponse.ok) throw new Error(statsBody.error ?? "통계를 불러오지 못했습니다.");
-        if (!ignore) setStats(statsBody);
+        const [initialSearchStats, initialAnalysisStats] = await Promise.all([
+          fetchJson<StatsResponse>("/api/stats"),
+          firstRoute ? fetchJson<StatsResponse>(`/api/stats?route=${encodeURIComponent(firstRoute)}`) : null,
+        ]);
+        if (!ignore) {
+          setSearchStats(initialSearchStats);
+          setAnalysisStats(initialAnalysisStats);
+        }
       } catch (err) {
         if (!ignore) setError(err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다.");
       } finally {
@@ -148,18 +150,17 @@ export default function DashboardClient() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
-      await fetchStats();
+      await fetchSearchStats();
     } catch (err) {
       setLoading(false);
       setError(err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다.");
     }
   };
 
-  const chooseRoute = async (nextRoute: string) => {
-    setRoute(nextRoute);
-    setStation(allValue);
+  const chooseAnalysisRoute = async (nextRoute: string) => {
+    setAnalysisRoute(nextRoute);
     try {
-      await fetchStats(nextRoute);
+      await fetchAnalysisStats(nextRoute);
     } catch (err) {
       setLoading(false);
       setError(err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다.");
@@ -180,84 +181,104 @@ export default function DashboardClient() {
       </header>
 
       <section className="heroText">
-        <h2>버스번호, 요일, 시간, 정류장, 날씨를 고르면 과거 좌석 데이터를 통계로 보여줍니다.</h2>
-        <p>
-          고르지 않은 조건은 비교 항목으로 남겨서 노선별, 정류장별, 시간대별, 날씨별 차이를 함께 볼 수 있습니다.
-        </p>
+        <h2>검색은 조건을 직접 좁히고, 분석은 버스별 패턴을 따로 살펴봅니다.</h2>
+        <p>날씨 통계는 지역별로 나누지 않고 강남 기준 관측값으로 계산합니다.</p>
       </section>
 
-      <section className="workspace">
-        <aside className="filterPanel">
-          <div className="sectionHead compact">
-            <div>
-              <p className="eyebrow">직접 설정</p>
-              <h2>조회 조건</h2>
+      <nav className="tabs mainTabs topTabs" aria-label="상단 탭">
+        {mainTabs.map((tab) => (
+          <button className={activeTab === tab.id ? "active" : ""} key={tab.id} onClick={() => setActiveTab(tab.id)}>
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      {error ? <div className="errorBox">{error}</div> : null}
+
+      {activeTab === "search" ? (
+        <section className="workspace">
+          <aside className="filterPanel">
+            <div className="sectionHead compact">
+              <div>
+                <p className="eyebrow">검색 조건</p>
+                <h2>직접 고르기</h2>
+              </div>
             </div>
-          </div>
-          <form onSubmit={submit}>
-            <Filter label="버스번호" options={[allValue, ...(options?.routes ?? [])]} value={route} onChange={setRoute} />
-            <Filter label="요일" options={[allValue, ...(options?.weekdays ?? [])]} value={weekday} onChange={setWeekday} />
-            <Filter label="시간" options={[allValue, ...(options?.times ?? [])]} value={time} onChange={setTime} />
-            <Filter
-              label="정류장"
-              options={[allValue, ...filteredStations.map((item) => item.station_name)]}
-              value={station}
-              onChange={setStation}
-            />
-            <Filter label="날씨" options={[allValue, ...weatherOptions]} value={weather} onChange={setWeather} />
-            <button className="primaryButton" type="submit" disabled={loading}>
-              {loading ? "불러오는 중" : "통계 조회"}
-            </button>
-          </form>
-          <p className="helperText">
-            검색 결과는 선택한 조건의 요약이고, 분석 보기는 비워둔 조건을 기준으로 나누어 보여줍니다.
-          </p>
-        </aside>
-
-        <section className="results">
-          <nav className="tabs mainTabs" aria-label="결과 탭">
-            {mainTabs.map((tab) => (
-              <button className={activeTab === tab.id ? "active" : ""} key={tab.id} onClick={() => setActiveTab(tab.id)}>
-                {tab.label}
+            <form onSubmit={submit}>
+              <Filter label="버스번호" options={[allValue, ...(options?.routes ?? [])]} value={route} onChange={setRoute} />
+              <Filter label="요일" options={[allValue, ...(options?.weekdays ?? [])]} value={weekday} onChange={setWeekday} />
+              <Filter label="시간" options={[allValue, ...(options?.times ?? [])]} value={time} onChange={setTime} />
+              <Filter
+                label="정류장"
+                options={[allValue, ...filteredStations.map((item) => item.station_name)]}
+                value={station}
+                onChange={setStation}
+              />
+              <Filter label="날씨" options={[allValue, ...(options?.weatherConditions ?? [])]} value={weather} onChange={setWeather} />
+              <button className="primaryButton" type="submit" disabled={loading}>
+                {loading ? "불러오는 중" : "검색"}
               </button>
-            ))}
-          </nav>
+            </form>
+          </aside>
 
-          {error ? <div className="errorBox">{error}</div> : null}
-          {!error && !loading && Number(stats?.summary?.sample_count ?? 0) === 0 ? (
-            <div className="emptyState">조건에 맞는 수집 데이터가 아직 없습니다.</div>
-          ) : null}
+          <section className="results">
+            {!error && !loading && Number(searchStats?.summary?.sample_count ?? 0) === 0 ? (
+              <div className="emptyState">조건에 맞는 수집 데이터가 아직 없습니다.</div>
+            ) : null}
+            {searchStats ? (
+              <SearchResult
+                summary={searchStats.summary}
+                byRoute={searchStats.byRoute}
+                byStation={searchStats.byStation}
+                route={route}
+                weekday={weekday}
+                time={time}
+                station={station}
+                weather={weather}
+              />
+            ) : null}
+          </section>
+        </section>
+      ) : null}
 
-          {stats ? (
-            <>
-              {activeTab === "search" ? (
-                <SearchResult
-                  summary={stats.summary}
-                  byRoute={stats.byRoute}
-                  byStation={stats.byStation}
-                  route={route}
-                  weekday={weekday}
-                  time={time}
-                  station={station}
-                  weather={weather}
-                />
-              ) : null}
-              {activeTab === "analysis" ? (
-                <AnalysisView
-                  mode={analysisMode}
-                  onModeChange={setAnalysisMode}
-                  stats={stats}
-                  routes={options?.routes ?? []}
-                  selectedRoute={route}
-                  onChooseRoute={chooseRoute}
-                />
-              ) : null}
-            </>
+      {activeTab === "analysis" ? (
+        <section className="analysisWorkspace">
+          <section className="panel analysisControls">
+            <div>
+              <p className="eyebrow">분석 조건</p>
+              <h2>버스별 분석</h2>
+            </div>
+            <label>
+              <span>버스번호</span>
+              <select value={analysisRoute} onChange={(event) => chooseAnalysisRoute(event.target.value)}>
+                {(options?.routes ?? []).map((item) => (
+                  <option key={item}>{item}</option>
+                ))}
+              </select>
+            </label>
+          </section>
+
+          {analysisStats ? (
+            <AnalysisView
+              mode={analysisMode}
+              onModeChange={setAnalysisMode}
+              stats={analysisStats}
+              route={analysisRoute}
+            />
           ) : null}
         </section>
-      </section>
+      ) : null}
     </main>
   );
+}
+
+async function fetchJson<T>(url: string) {
+  const response = await fetch(url, { cache: "no-store" });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body.error ?? "데이터를 불러오지 못했습니다.");
+  }
+  return body as T;
 }
 
 function Filter({
@@ -347,19 +368,15 @@ function AnalysisView({
   mode,
   onModeChange,
   stats,
-  routes,
-  selectedRoute,
-  onChooseRoute,
+  route,
 }: {
   mode: AnalysisMode;
   onModeChange: (mode: AnalysisMode) => void;
   stats: StatsResponse;
-  routes: string[];
-  selectedRoute: string;
-  onChooseRoute: (route: string) => void;
+  route: string;
 }) {
   return (
-    <>
+    <section className="analysisResults">
       <nav className="subTabs" aria-label="분석 종류">
         {analysisTabs.map((tab) => (
           <button className={mode === tab.id ? "active" : ""} key={tab.id} onClick={() => onModeChange(tab.id)}>
@@ -367,63 +384,44 @@ function AnalysisView({
           </button>
         ))}
       </nav>
-      {mode === "station" ? (
-        <StationView rows={stats.byStation} routes={routes} selectedRoute={selectedRoute} onChooseRoute={onChooseRoute} />
-      ) : null}
+      {mode === "station" ? <StationView rows={stats.byStation} selectedRoute={route} /> : null}
       {mode === "time" ? (
         <AnalysisTable
-          title="시간대별 보기"
-          description="선택한 조건에서 시간대별 평균 잔여좌석과 만차확률을 보여줍니다."
+          title={`${route} 시간대별 보기`}
+          description="선택한 버스에서 시간대별 평균 잔여좌석과 만차확률을 보여줍니다."
           columns={["시간", "평균 잔여좌석", "최소", "만차확률", "표본"]}
           rows={stats.byTime.map(rowToCells)}
         />
       ) : null}
       {mode === "weekday" ? (
         <AnalysisTable
-          title="요일별 보기"
-          description="선택한 조건에서 요일별 평균 잔여좌석과 만차확률을 비교합니다."
+          title={`${route} 요일별 보기`}
+          description="선택한 버스에서 요일별 평균 잔여좌석과 만차확률을 비교합니다."
           columns={["요일", "평균 잔여좌석", "최소", "만차확률", "표본"]}
           rows={stats.byWeekday.map(rowToCells)}
         />
       ) : null}
       {mode === "weather" ? (
         <AnalysisTable
-          title="날씨별 보기"
-          description="선택한 조건에서 날씨 조건별 평균 잔여좌석과 만차확률을 비교합니다."
+          title={`${route} 날씨별 보기`}
+          description="강남 기준 날씨 조건별 평균 잔여좌석과 만차확률을 비교합니다."
           columns={["날씨", "평균 잔여좌석", "최소", "만차확률", "표본"]}
           rows={stats.byWeather.map(rowToCells)}
         />
       ) : null}
-    </>
+    </section>
   );
 }
 
-function StationView({
-  rows,
-  routes,
-  selectedRoute,
-  onChooseRoute,
-}: {
-  rows: GroupRow[];
-  routes: string[];
-  selectedRoute: string;
-  onChooseRoute: (route: string) => void;
-}) {
+function StationView({ rows, selectedRoute }: { rows: GroupRow[]; selectedRoute: string }) {
   return (
     <section className="panel routePanel">
       <div className="sectionHead">
         <div>
           <p className="eyebrow">정류장별 보기</p>
-          <h2>{selectedRoute === allValue ? "전체 노선" : selectedRoute} 정류장 순서와 좌석 통계</h2>
+          <h2>{selectedRoute} 정류장 순서와 좌석 통계</h2>
         </div>
-        <p>노선 버튼을 누르면 해당 버스만 필터링하고, 정류장 순서대로 평균 좌석과 만차확률을 표시합니다.</p>
-      </div>
-      <div className="routeChips">
-        {[allValue, ...routes].map((item) => (
-          <button className={item === selectedRoute ? "selected" : ""} key={item} onClick={() => onChooseRoute(item)}>
-            {item}
-          </button>
-        ))}
+        <p>선택한 버스를 기준으로 정류장 순서대로 평균 좌석과 만차확률을 표시합니다.</p>
       </div>
       <div className="routeLine">
         {rows.map((row) => {

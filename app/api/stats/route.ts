@@ -47,7 +47,7 @@ const baseCte = `
     left join lateral (
       select *
       from weather_history w
-      where w.area_key = s.weather_area_key
+      where w.area_key = 'gangnam'
       order by abs(extract(epoch from (w.collected_at - s.collected_at)))
       limit 1
     ) w on true
@@ -84,8 +84,6 @@ function buildWhere(params: URLSearchParams, skip: string | null = null) {
       add("weather_condition", "비/눈");
     } else if (weather === "강수없음") {
       add("weather_condition", "강수없음");
-    } else {
-      add("weather_area_name", weather);
     }
   }
 
@@ -158,11 +156,7 @@ export async function GET(request: NextRequest) {
         "weekday",
         "min(day_of_week)"
       ),
-      groupedStats(
-        "case when weather_area_name is not null then weather_condition || ' / ' || weather_area_name else weather_condition end",
-        params,
-        "weather"
-      ),
+      groupedStats("weather_condition", params, "weather"),
     ]);
 
     return NextResponse.json({
