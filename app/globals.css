@@ -164,11 +164,16 @@ select {
   background: var(--green);
   border: 0;
   color: #ffffff;
-  cursor: default;
+  cursor: pointer;
   font-weight: 800;
   margin-top: 16px;
   min-height: 42px;
   width: 100%;
+}
+
+.primaryButton:disabled {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .helperText {
@@ -270,10 +275,11 @@ select {
   margin-bottom: 18px;
 }
 
-.routeChips span {
+.routeChips button {
   background: #f2f6f7;
   border: 1px solid var(--line);
   color: #41515a;
+  cursor: pointer;
   font-size: 13px;
   font-weight: 800;
   padding: 8px 12px;
@@ -283,6 +289,16 @@ select {
   background: #e8f5ef;
   border-color: #b9decf;
   color: var(--green);
+}
+
+.errorBox,
+.emptyState {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #8a4b12;
+  font-weight: 700;
+  margin-bottom: 14px;
+  padding: 14px 16px;
 }
 
 .routeLine {
