@@ -241,6 +241,10 @@ select {
   color: var(--green);
 }
 
+.compactTabs {
+  margin-top: -4px;
+}
+
 .panel {
   padding: 18px;
 }

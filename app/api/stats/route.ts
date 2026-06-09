@@ -55,7 +55,7 @@ const baseCte = `
 `;
 
 function buildWhere(params: URLSearchParams, skip: string | null = null) {
-  const clauses = ["remain_seat is not null", "station_name not like '%(경유)%'"];
+  const clauses = ["remain_seat is not null", "remain_seat >= 0", "station_name not like '%(경유)%'"];
   const values: unknown[] = [];
 
   const add = (column: string, value: string) => {
@@ -138,7 +138,7 @@ export async function GET(request: NextRequest) {
       values
     );
 
-    const [byRoute, byStation, byTime, byWeekday, byWeather] = await Promise.all([
+    const [byRoute, byStation, byTime, byWeekday, byWeather, byTemperature] = await Promise.all([
       groupedStats("route_name", params, "route"),
       groupedStats("station_seq::text || '. ' || station_name", params, "station", "min(station_seq)"),
       groupedStats("time_hhmm", params, "time", "label"),
@@ -157,6 +157,26 @@ export async function GET(request: NextRequest) {
         "min(day_of_week)"
       ),
       groupedStats("weather_condition", params, "weather"),
+      groupedStats(
+        `case
+          when temperature is null then '온도 없음'
+          when temperature < 0 then '영하'
+          when temperature < 10 then '0~9도'
+          when temperature < 20 then '10~19도'
+          when temperature < 30 then '20~29도'
+          else '30도 이상'
+        end`,
+        params,
+        "temperature",
+        `min(case
+          when temperature is null then 99
+          when temperature < 0 then 0
+          when temperature < 10 then 1
+          when temperature < 20 then 2
+          when temperature < 30 then 3
+          else 4
+        end)`
+      ),
     ]);
 
     return NextResponse.json({
@@ -166,6 +186,7 @@ export async function GET(request: NextRequest) {
       byTime,
       byWeekday,
       byWeather,
+      byTemperature,
     });
   } catch (error) {
     return NextResponse.json(

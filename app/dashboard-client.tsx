@@ -43,10 +43,12 @@ type StatsResponse = {
   byTime: GroupRow[];
   byWeekday: GroupRow[];
   byWeather: GroupRow[];
+  byTemperature: GroupRow[];
 };
 
 type MainTab = "search" | "analysis";
 type AnalysisMode = "station" | "time" | "weekday" | "weather";
+type WeatherAnalysisMode = "precipitation" | "temperature";
 
 const allValue = "전체";
 const mainTabs: { id: MainTab; label: string }[] = [
@@ -120,12 +122,10 @@ export default function DashboardClient() {
         const firstRoute = body.routes?.[0] ?? "";
         setAnalysisRoute(firstRoute);
 
-        const [initialSearchStats, initialAnalysisStats] = await Promise.all([
-          fetchJson<StatsResponse>("/api/stats"),
-          firstRoute ? fetchJson<StatsResponse>(`/api/stats?route=${encodeURIComponent(firstRoute)}`) : null,
-        ]);
+        const initialAnalysisStats = firstRoute
+          ? await fetchJson<StatsResponse>(`/api/stats?route=${encodeURIComponent(firstRoute)}`)
+          : null;
         if (!ignore) {
-          setSearchStats(initialSearchStats);
           setAnalysisStats(initialAnalysisStats);
         }
       } catch (err) {
@@ -222,8 +222,11 @@ export default function DashboardClient() {
           </aside>
 
           <section className="results">
-            {!error && !loading && Number(searchStats?.summary?.sample_count ?? 0) === 0 ? (
+            {!error && !loading && searchStats && Number(searchStats.summary?.sample_count ?? 0) === 0 ? (
               <div className="emptyState">조건에 맞는 수집 데이터가 아직 없습니다.</div>
+            ) : null}
+            {!searchStats && !loading ? (
+              <div className="emptyState">검색 조건을 고른 뒤 검색 버튼을 누르면 결과가 표시됩니다.</div>
             ) : null}
             {searchStats ? (
               <SearchResult
@@ -375,6 +378,8 @@ function AnalysisView({
   stats: StatsResponse;
   route: string;
 }) {
+  const [weatherMode, setWeatherMode] = useState<WeatherAnalysisMode>("precipitation");
+
   return (
     <section className="analysisResults">
       <nav className="subTabs" aria-label="분석 종류">
@@ -402,12 +407,32 @@ function AnalysisView({
         />
       ) : null}
       {mode === "weather" ? (
-        <AnalysisTable
-          title={`${route} 날씨별 보기`}
-          description="강남 기준 날씨 조건별 평균 잔여좌석과 만차확률을 비교합니다."
-          columns={["날씨", "평균 잔여좌석", "최소", "만차확률", "표본"]}
-          rows={stats.byWeather.map(rowToCells)}
-        />
+        <>
+          <nav className="subTabs compactTabs" aria-label="날씨 분석 종류">
+            <button className={weatherMode === "precipitation" ? "active" : ""} onClick={() => setWeatherMode("precipitation")}>
+              비/눈 기준
+            </button>
+            <button className={weatherMode === "temperature" ? "active" : ""} onClick={() => setWeatherMode("temperature")}>
+              온도 구간
+            </button>
+          </nav>
+          {weatherMode === "precipitation" ? (
+            <AnalysisTable
+              title={`${route} 날씨별 보기`}
+              description="강남 기준 비/눈 여부별 평균 잔여좌석과 만차확률을 비교합니다."
+              columns={["날씨", "평균 잔여좌석", "최소", "만차확률", "표본"]}
+              rows={stats.byWeather.map(rowToCells)}
+            />
+          ) : null}
+          {weatherMode === "temperature" ? (
+            <AnalysisTable
+              title={`${route} 온도별 보기`}
+              description="강남 기준 온도 구간별 평균 잔여좌석과 만차확률을 비교합니다."
+              columns={["온도", "평균 잔여좌석", "최소", "만차확률", "표본"]}
+              rows={stats.byTemperature.map(rowToCells)}
+            />
+          ) : null}
+        </>
       ) : null}
     </section>
   );
