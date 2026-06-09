@@ -31,7 +31,7 @@ export async function GET() {
       weekdays,
       times: times.rows.map((row) => row.time_hhmm),
       stations: stations.rows,
-      weatherConditions: ["강수없음", "비/눈"],
+      weatherConditions: ["강수없음", "비", "눈"],
     });
   } catch (error) {
     return NextResponse.json(

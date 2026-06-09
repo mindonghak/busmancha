@@ -188,7 +188,7 @@ export default function DashboardClient() {
 
       <section className="heroText">
         <h2>검색은 조건을 직접 좁히고, 분석은 버스별 패턴을 따로 살펴봅니다.</h2>
-        <p>날씨 통계는 지역별로 나누지 않고 강남 기준 관측값으로 계산합니다.</p>
+        <p>날씨 통계는 지역별로 나누지 않고 강남 기준 일별 대표 날씨와 최고기온으로 계산합니다.</p>
       </section>
 
       <nav className="tabs mainTabs topTabs" aria-label="상단 탭">
@@ -475,7 +475,7 @@ function AnalysisView({
         <>
           <nav className="subTabs compactTabs" aria-label="날씨 분석 종류">
             <button className={weatherMode === "precipitation" ? "active" : ""} onClick={() => setWeatherMode("precipitation")}>
-              비/눈 기준
+              일별 날씨
             </button>
             <button className={weatherMode === "temperature" ? "active" : ""} onClick={() => setWeatherMode("temperature")}>
               온도 구간
@@ -484,7 +484,7 @@ function AnalysisView({
           {weatherMode === "precipitation" ? (
             <AnalysisTable
               title={`${route} 날씨별 보기`}
-              description="강남 기준 비/눈 여부별 평균 잔여좌석과 만차확률을 비교합니다."
+              description="강남 기준 그날의 대표 날씨별 평균 잔여좌석과 만차확률을 비교합니다."
               columns={["날씨", "평균 잔여좌석", "최소", "만차확률", "표본"]}
               rows={stats.byWeather.map(rowToCells)}
             />
@@ -492,7 +492,7 @@ function AnalysisView({
           {weatherMode === "temperature" ? (
             <AnalysisTable
               title={`${route} 온도별 보기`}
-              description="강남 기준 관측 기온을 3도 간격으로 나눠 평균 잔여좌석과 만차확률을 비교합니다."
+              description="강남 기준 그날의 최고기온을 3도 간격으로 나눠 평균 잔여좌석과 만차확률을 비교합니다."
               columns={["온도", "평균 잔여좌석", "최소", "만차확률", "표본"]}
               rows={stats.byTemperature.map(rowToCells)}
             />

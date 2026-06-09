@@ -31,26 +31,26 @@ const weekdayMap = new Map([
 ]);
 
 const baseCte = `
-  with seat_weather as (
+  with daily_weather as (
+    select
+      collected_at::date as service_date,
+      max(temperature) as max_temperature,
+      case
+        when bool_or(coalesce(precipitation_type, '0') in ('2', '3', '6', '7')) then '눈'
+        when bool_or(coalesce(precipitation_1h, 0) > 0 or coalesce(precipitation_type, '0') <> '0') then '비'
+        else '강수없음'
+      end as daily_weather_condition
+    from weather_history
+    where area_key = 'gangnam'
+    group by collected_at::date
+  ),
+  seat_weather as (
     select
       s.*,
-      case
-        when coalesce(w.precipitation_1h, 0) > 0 or coalesce(w.precipitation_type, '0') <> '0'
-          then '비/눈'
-        else '강수없음'
-      end as weather_condition,
-      w.temperature,
-      w.humidity,
-      w.precipitation_1h,
-      w.wind_speed
+      coalesce(w.daily_weather_condition, '날씨 없음') as weather_condition,
+      w.max_temperature
     from seat_history s
-    left join lateral (
-      select *
-      from weather_history w
-      where w.area_key = 'gangnam'
-      order by abs(extract(epoch from (w.collected_at - s.collected_at)))
-      limit 1
-    ) w on true
+    left join daily_weather w on w.service_date = s.service_date
   )
 `;
 
@@ -80,10 +80,8 @@ function buildWhere(params: URLSearchParams, skip: string | null = null) {
   if (skip !== "time" && time && time !== "전체") add("time_hhmm", time);
   if (skip !== "station" && station && station !== "전체") add("station_name", station);
   if (skip !== "weather" && weather && weather !== "전체") {
-    if (weather === "비/눈") {
-      add("weather_condition", "비/눈");
-    } else if (weather === "강수없음") {
-      add("weather_condition", "강수없음");
+    if (weather === "강수없음" || weather === "비" || weather === "눈") {
+      add("weather_condition", weather);
     }
   }
 
@@ -189,14 +187,14 @@ export async function GET(request: NextRequest) {
       groupedStats("weather_condition", params, "weather"),
       groupedStats(
         `case
-          when temperature is null then '온도 없음'
-          else (floor(temperature / 3) * 3)::int::text || '~' || ((floor(temperature / 3) * 3)::int + 2)::text || '도'
+          when max_temperature is null then '온도 없음'
+          else (floor(max_temperature / 3) * 3)::int::text || '~' || ((floor(max_temperature / 3) * 3)::int + 2)::text || '도'
         end`,
         params,
         "temperature",
         `min(case
-          when temperature is null then 99
-          else floor(temperature / 3)
+          when max_temperature is null then 99
+          else floor(max_temperature / 3)
         end)`
       ),
       filteredGroupedStats("station_seq::text || '. ' || station_name", params, "min(station_seq)"),
