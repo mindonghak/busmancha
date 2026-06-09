@@ -46,14 +46,19 @@ type StatsResponse = {
   byWeather: GroupRow[];
 };
 
-type ViewMode = "direct" | "station" | "time" | "weather";
+type MainTab = "search" | "analysis";
+type AnalysisMode = "station" | "time" | "weekday" | "weather";
 
 const allValue = "전체";
-const tabLabels: { id: ViewMode; label: string }[] = [
-  { id: "direct", label: "직접 설정" },
-  { id: "station", label: "정류장별 보기" },
-  { id: "time", label: "시간대별 보기" },
-  { id: "weather", label: "날씨별 보기" },
+const mainTabs: { id: MainTab; label: string }[] = [
+  { id: "search", label: "검색 결과" },
+  { id: "analysis", label: "분석 보기" },
+];
+const analysisTabs: { id: AnalysisMode; label: string }[] = [
+  { id: "station", label: "정류장별" },
+  { id: "time", label: "시간대별" },
+  { id: "weekday", label: "요일별" },
+  { id: "weather", label: "날씨별" },
 ];
 
 export default function DashboardClient() {
@@ -64,7 +69,8 @@ export default function DashboardClient() {
   const [time, setTime] = useState(allValue);
   const [station, setStation] = useState(allValue);
   const [weather, setWeather] = useState(allValue);
-  const [activeView, setActiveView] = useState<ViewMode>("station");
+  const [activeTab, setActiveTab] = useState<MainTab>("search");
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("station");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,6 +101,7 @@ export default function DashboardClient() {
       throw new Error(body.error ?? "통계를 불러오지 못했습니다.");
     }
     setStats(body);
+    setActiveTab("search");
     setLoading(false);
   };
 
@@ -203,14 +210,14 @@ export default function DashboardClient() {
             </button>
           </form>
           <p className="helperText">
-            예를 들어 날씨를 전체로 두면 아래 날씨별 보기에서 강수 여부나 지역별 좌석 차이가 비교됩니다.
+            검색 결과는 선택한 조건의 요약이고, 분석 보기는 비워둔 조건을 기준으로 나누어 보여줍니다.
           </p>
         </aside>
 
         <section className="results">
-          <nav className="tabs" aria-label="보기 모드">
-            {tabLabels.map((tab) => (
-              <button className={activeView === tab.id ? "active" : ""} key={tab.id} onClick={() => setActiveView(tab.id)}>
+          <nav className="tabs mainTabs" aria-label="결과 탭">
+            {mainTabs.map((tab) => (
+              <button className={activeTab === tab.id ? "active" : ""} key={tab.id} onClick={() => setActiveTab(tab.id)}>
                 {tab.label}
               </button>
             ))}
@@ -223,24 +230,26 @@ export default function DashboardClient() {
 
           {stats ? (
             <>
-              {activeView === "direct" ? <DirectSummary summary={stats.summary} byRoute={stats.byRoute} byWeekday={stats.byWeekday} /> : null}
-              {activeView === "station" ? (
-                <StationView rows={stats.byStation} routes={options?.routes ?? []} selectedRoute={route} onChooseRoute={chooseRoute} />
-              ) : null}
-              {activeView === "time" ? (
-                <AnalysisTable
-                  title="시간대별 보기"
-                  description="선택한 조건에서 시간대별 평균 잔여좌석과 만차확률을 보여줍니다."
-                  columns={["시간", "평균 잔여좌석", "최소", "만차확률", "표본"]}
-                  rows={stats.byTime.map(rowToCells)}
+              {activeTab === "search" ? (
+                <SearchResult
+                  summary={stats.summary}
+                  byRoute={stats.byRoute}
+                  byStation={stats.byStation}
+                  route={route}
+                  weekday={weekday}
+                  time={time}
+                  station={station}
+                  weather={weather}
                 />
               ) : null}
-              {activeView === "weather" ? (
-                <AnalysisTable
-                  title="날씨별 보기"
-                  description="선택한 조건에서 날씨 조건별 평균 잔여좌석과 만차확률을 비교합니다."
-                  columns={["날씨", "평균 잔여좌석", "최소", "만차확률", "표본"]}
-                  rows={stats.byWeather.map(rowToCells)}
+              {activeTab === "analysis" ? (
+                <AnalysisView
+                  mode={analysisMode}
+                  onModeChange={setAnalysisMode}
+                  stats={stats}
+                  routes={options?.routes ?? []}
+                  selectedRoute={route}
+                  onChooseRoute={chooseRoute}
                 />
               ) : null}
             </>
@@ -274,16 +283,40 @@ function Filter({
   );
 }
 
-function DirectSummary({ summary, byRoute, byWeekday }: { summary: Summary; byRoute: GroupRow[]; byWeekday: GroupRow[] }) {
+function SearchResult({
+  summary,
+  byRoute,
+  byStation,
+  route,
+  weekday,
+  time,
+  station,
+  weather,
+}: {
+  summary: Summary;
+  byRoute: GroupRow[];
+  byStation: GroupRow[];
+  route: string;
+  weekday: string;
+  time: string;
+  station: string;
+  weather: string;
+}) {
   return (
     <>
       <section className="panel noTopPadding">
         <div className="sectionHead">
           <div>
-            <p className="eyebrow">직접 설정 결과</p>
-            <h2>선택 조건 요약</h2>
+            <p className="eyebrow">검색 결과</p>
+            <h2>{route === allValue ? "전체 버스" : route} 좌석 통계</h2>
           </div>
           <p>{dateRange(summary.first_collected_at, summary.last_collected_at)}</p>
+        </div>
+        <div className="querySummary">
+          <span>요일: {weekday}</span>
+          <span>시간: {time}</span>
+          <span>정류장: {station}</span>
+          <span>날씨: {weather}</span>
         </div>
         <div className="summaryStrip">
           <Metric label="표본" value={`${summary.sample_count ?? "0"}건`} />
@@ -294,18 +327,73 @@ function DirectSummary({ summary, byRoute, byWeekday }: { summary: Summary; byRo
       </section>
       <div className="splitGrid">
         <AnalysisTable
-          title="버스별 비교"
-          description="버스번호를 전체로 둔 경우 노선별 차이를 확인합니다."
+          title="버스별 결과"
+          description="버스를 전체로 검색했을 때 노선별 결과를 보여줍니다."
           columns={["버스", "평균 잔여좌석", "최소", "만차확률", "표본"]}
           rows={byRoute.map(rowToCells)}
         />
         <AnalysisTable
-          title="요일별 비교"
-          description="요일을 전체로 둔 경우 요일별 패턴을 확인합니다."
-          columns={["요일", "평균 잔여좌석", "최소", "만차확률", "표본"]}
-          rows={byWeekday.map(rowToCells)}
+          title="정류장 상위 결과"
+          description="선택 조건에서 정류장별 결과를 노선 순서대로 보여줍니다."
+          columns={["정류장", "평균 잔여좌석", "최소", "만차확률", "표본"]}
+          rows={byStation.slice(0, 12).map(rowToCells)}
         />
       </div>
+    </>
+  );
+}
+
+function AnalysisView({
+  mode,
+  onModeChange,
+  stats,
+  routes,
+  selectedRoute,
+  onChooseRoute,
+}: {
+  mode: AnalysisMode;
+  onModeChange: (mode: AnalysisMode) => void;
+  stats: StatsResponse;
+  routes: string[];
+  selectedRoute: string;
+  onChooseRoute: (route: string) => void;
+}) {
+  return (
+    <>
+      <nav className="subTabs" aria-label="분석 종류">
+        {analysisTabs.map((tab) => (
+          <button className={mode === tab.id ? "active" : ""} key={tab.id} onClick={() => onModeChange(tab.id)}>
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+      {mode === "station" ? (
+        <StationView rows={stats.byStation} routes={routes} selectedRoute={selectedRoute} onChooseRoute={onChooseRoute} />
+      ) : null}
+      {mode === "time" ? (
+        <AnalysisTable
+          title="시간대별 보기"
+          description="선택한 조건에서 시간대별 평균 잔여좌석과 만차확률을 보여줍니다."
+          columns={["시간", "평균 잔여좌석", "최소", "만차확률", "표본"]}
+          rows={stats.byTime.map(rowToCells)}
+        />
+      ) : null}
+      {mode === "weekday" ? (
+        <AnalysisTable
+          title="요일별 보기"
+          description="선택한 조건에서 요일별 평균 잔여좌석과 만차확률을 비교합니다."
+          columns={["요일", "평균 잔여좌석", "최소", "만차확률", "표본"]}
+          rows={stats.byWeekday.map(rowToCells)}
+        />
+      ) : null}
+      {mode === "weather" ? (
+        <AnalysisTable
+          title="날씨별 보기"
+          description="선택한 조건에서 날씨 조건별 평균 잔여좌석과 만차확률을 비교합니다."
+          columns={["날씨", "평균 잔여좌석", "최소", "만차확률", "표본"]}
+          rows={stats.byWeather.map(rowToCells)}
+        />
+      ) : null}
     </>
   );
 }

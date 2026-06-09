@@ -196,6 +196,10 @@ select {
   padding: 4px;
 }
 
+.mainTabs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .tabs button {
   background: transparent;
   border: 0;
@@ -208,6 +212,29 @@ select {
   background: #ffffff;
   color: var(--green);
   font-weight: 800;
+}
+
+.subTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.subTabs button {
+  background: #f2f6f7;
+  border: 1px solid var(--line);
+  color: #41515a;
+  cursor: pointer;
+  font-weight: 800;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.subTabs .active {
+  background: #e8f5ef;
+  border-color: #b9decf;
+  color: var(--green);
 }
 
 .panel {
@@ -244,6 +271,22 @@ select {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.querySummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.querySummary span {
+  background: #f2f6f7;
+  border: 1px solid var(--line);
+  color: #41515a;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 7px 10px;
 }
 
 .summaryStrip div {
