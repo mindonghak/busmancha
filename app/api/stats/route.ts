@@ -135,6 +135,50 @@ async function filteredGroupedStats(labelSql: string, params: URLSearchParams, o
   return result.rows;
 }
 
+async function weatherGroupedStats(params: URLSearchParams) {
+  const { where, values } = buildWhere(params, "weather");
+  const result = await query<GroupRow>(
+    `
+    ${baseCte}
+    select
+      weather_condition as label,
+      count(*)::text as sample_count,
+      round(avg(remain_seat)::numeric, 1)::text as avg_seat,
+      min(remain_seat)::int as min_seat,
+      round(avg(case when remain_seat <= 0 then 1.0 else 0.0 end)::numeric * 100, 1)::text as full_probability
+    from seat_weather
+    ${where} and weather_condition <> '날씨 없음'
+    group by label
+    order by label
+    limit 100
+    `,
+    values
+  );
+  return result.rows;
+}
+
+async function temperatureGroupedStats(params: URLSearchParams) {
+  const { where, values } = buildWhere(params);
+  const result = await query<GroupRow>(
+    `
+    ${baseCte}
+    select
+      (floor(max_temperature / 3) * 3)::int::text || '~' || ((floor(max_temperature / 3) * 3)::int + 2)::text || '도' as label,
+      count(*)::text as sample_count,
+      round(avg(remain_seat)::numeric, 1)::text as avg_seat,
+      min(remain_seat)::int as min_seat,
+      round(avg(case when remain_seat <= 0 then 1.0 else 0.0 end)::numeric * 100, 1)::text as full_probability
+    from seat_weather
+    ${where} and max_temperature is not null
+    group by label
+    order by min(floor(max_temperature / 3))
+    limit 100
+    `,
+    values
+  );
+  return result.rows;
+}
+
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
 
@@ -184,19 +228,8 @@ export async function GET(request: NextRequest) {
         "weekday",
         "min(day_of_week)"
       ),
-      groupedStats("weather_condition", params, "weather"),
-      groupedStats(
-        `case
-          when max_temperature is null then '온도 없음'
-          else (floor(max_temperature / 3) * 3)::int::text || '~' || ((floor(max_temperature / 3) * 3)::int + 2)::text || '도'
-        end`,
-        params,
-        "temperature",
-        `min(case
-          when max_temperature is null then 99
-          else floor(max_temperature / 3)
-        end)`
-      ),
+      weatherGroupedStats(params),
+      temperatureGroupedStats(params),
       filteredGroupedStats("station_seq::text || '. ' || station_name", params, "min(station_seq)"),
     ]);
 
