@@ -115,6 +115,28 @@ async function groupedStats(labelSql: string, params: URLSearchParams, skip: str
   return result.rows;
 }
 
+async function filteredGroupedStats(labelSql: string, params: URLSearchParams, orderSql = "label") {
+  const { where, values } = buildWhere(params);
+  const result = await query<GroupRow>(
+    `
+    ${baseCte}
+    select
+      ${labelSql} as label,
+      count(*)::text as sample_count,
+      round(avg(remain_seat)::numeric, 1)::text as avg_seat,
+      min(remain_seat)::int as min_seat,
+      round(avg(case when remain_seat <= 0 then 1.0 else 0.0 end)::numeric * 100, 1)::text as full_probability
+    from seat_weather
+    ${where}
+    group by label
+    order by ${orderSql}
+    limit 100
+    `,
+    values
+  );
+  return result.rows;
+}
+
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
 
@@ -138,7 +160,15 @@ export async function GET(request: NextRequest) {
       values
     );
 
-    const [byRoute, byStation, byTime, byWeekday, byWeather, byTemperature] = await Promise.all([
+    const [
+      byRoute,
+      byStation,
+      byTime,
+      byWeekday,
+      byWeather,
+      byTemperature,
+      filteredByStation,
+    ] = await Promise.all([
       groupedStats("route_name", params, "route"),
       groupedStats("station_seq::text || '. ' || station_name", params, "station", "min(station_seq)"),
       groupedStats("time_hhmm", params, "time", "label"),
@@ -177,6 +207,7 @@ export async function GET(request: NextRequest) {
           else 4
         end)`
       ),
+      filteredGroupedStats("station_seq::text || '. ' || station_name", params, "min(station_seq)"),
     ]);
 
     return NextResponse.json({
@@ -187,6 +218,7 @@ export async function GET(request: NextRequest) {
       byWeekday,
       byWeather,
       byTemperature,
+      filteredByStation,
     });
   } catch (error) {
     return NextResponse.json(

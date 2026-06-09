@@ -44,6 +44,7 @@ type StatsResponse = {
   byWeekday: GroupRow[];
   byWeather: GroupRow[];
   byTemperature: GroupRow[];
+  filteredByStation: GroupRow[];
 };
 
 type MainTab = "search" | "analysis";
@@ -66,7 +67,7 @@ export default function DashboardClient() {
   const [options, setOptions] = useState<OptionsResponse | null>(null);
   const [searchStats, setSearchStats] = useState<StatsResponse | null>(null);
   const [analysisStats, setAnalysisStats] = useState<StatsResponse | null>(null);
-  const [route, setRoute] = useState(allValue);
+  const [route, setRoute] = useState("");
   const [weekday, setWeekday] = useState(allValue);
   const [time, setTime] = useState(allValue);
   const [station, setStation] = useState(allValue);
@@ -79,7 +80,7 @@ export default function DashboardClient() {
 
   const filteredStations = useMemo(() => {
     if (!options) return [];
-    return options.stations.filter((item) => route === allValue || item.route_name === route);
+    return options.stations.filter((item) => item.route_name === route);
   }, [options, route]);
 
   const fetchSearchStats = async () => {
@@ -87,7 +88,8 @@ export default function DashboardClient() {
     setError(null);
 
     const params = new URLSearchParams();
-    if (route !== allValue) params.set("route", route);
+    if (!route) throw new Error("버스번호를 선택해 주세요.");
+    params.set("route", route);
     if (weekday !== allValue) params.set("weekday", weekday);
     if (time !== allValue) params.set("time", time);
     if (station !== allValue) params.set("station", station);
@@ -100,13 +102,11 @@ export default function DashboardClient() {
   };
 
   const fetchAnalysisStats = async (nextRoute: string) => {
-    if (!nextRoute) return;
+    if (!nextRoute) return null;
     setLoading(true);
     setError(null);
     const params = new URLSearchParams({ route: nextRoute });
-    const body = await fetchJson<StatsResponse>(`/api/stats?${params.toString()}`);
-    setAnalysisStats(body);
-    setLoading(false);
+    return fetchJson<StatsResponse>(`/api/stats?${params.toString()}`);
   };
 
   useEffect(() => {
@@ -120,6 +120,7 @@ export default function DashboardClient() {
 
         setOptions(body);
         const firstRoute = body.routes?.[0] ?? "";
+        setRoute(firstRoute);
         setAnalysisRoute(firstRoute);
 
         const initialAnalysisStats = firstRoute
@@ -158,9 +159,13 @@ export default function DashboardClient() {
   };
 
   const chooseAnalysisRoute = async (nextRoute: string) => {
-    setAnalysisRoute(nextRoute);
     try {
-      await fetchAnalysisStats(nextRoute);
+      const body = await fetchAnalysisStats(nextRoute);
+      if (body) {
+        setAnalysisStats(body);
+        setAnalysisRoute(nextRoute);
+      }
+      setLoading(false);
     } catch (err) {
       setLoading(false);
       setError(err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다.");
@@ -205,7 +210,7 @@ export default function DashboardClient() {
               </div>
             </div>
             <form onSubmit={submit}>
-              <Filter label="버스번호" options={[allValue, ...(options?.routes ?? [])]} value={route} onChange={setRoute} />
+              <Filter label="버스번호" options={options?.routes ?? []} value={route} onChange={setRoute} />
               <Filter label="요일" options={[allValue, ...(options?.weekdays ?? [])]} value={weekday} onChange={setWeekday} />
               <Filter label="시간" options={[allValue, ...(options?.times ?? [])]} value={time} onChange={setTime} />
               <Filter
@@ -231,8 +236,7 @@ export default function DashboardClient() {
             {searchStats ? (
               <SearchResult
                 summary={searchStats.summary}
-                byRoute={searchStats.byRoute}
-                byStation={searchStats.byStation}
+                byStation={searchStats.filteredByStation}
                 route={route}
                 weekday={weekday}
                 time={time}
@@ -309,7 +313,6 @@ function Filter({
 
 function SearchResult({
   summary,
-  byRoute,
   byStation,
   route,
   weekday,
@@ -318,7 +321,6 @@ function SearchResult({
   weather,
 }: {
   summary: Summary;
-  byRoute: GroupRow[];
   byStation: GroupRow[];
   route: string;
   weekday: string;
@@ -332,7 +334,7 @@ function SearchResult({
         <div className="sectionHead">
           <div>
             <p className="eyebrow">검색 결과</p>
-            <h2>{route === allValue ? "전체 버스" : route} 좌석 통계</h2>
+            <h2>{route} 좌석 통계</h2>
           </div>
           <p>{dateRange(summary.first_collected_at, summary.last_collected_at)}</p>
         </div>
@@ -349,18 +351,12 @@ function SearchResult({
           <Metric label="평균 도착예정" value={etaText(summary.avg_eta_seconds)} />
         </div>
       </section>
-      <div className="splitGrid">
+      <div>
         <AnalysisTable
-          title="버스별 결과"
-          description="버스를 전체로 검색했을 때 노선별 결과를 보여줍니다."
-          columns={["버스", "평균 잔여좌석", "최소", "만차확률", "표본"]}
-          rows={byRoute.map(rowToCells)}
-        />
-        <AnalysisTable
-          title="정류장 상위 결과"
-          description="선택 조건에서 정류장별 결과를 노선 순서대로 보여줍니다."
+          title="정류장별 결과"
+          description="선택한 조건을 모두 반영한 정류장별 결과입니다. 정류장을 전체로 두면 해당 버스의 정류장이 모두 표시됩니다."
           columns={["정류장", "평균 잔여좌석", "최소", "만차확률", "표본"]}
-          rows={byStation.slice(0, 12).map(rowToCells)}
+          rows={byStation.map(rowToCells)}
         />
       </div>
     </>
