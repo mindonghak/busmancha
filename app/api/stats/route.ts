@@ -190,21 +190,13 @@ export async function GET(request: NextRequest) {
       groupedStats(
         `case
           when temperature is null then '온도 없음'
-          when temperature < 0 then '영하'
-          when temperature < 10 then '0~9도'
-          when temperature < 20 then '10~19도'
-          when temperature < 30 then '20~29도'
-          else '30도 이상'
+          else (floor(temperature / 3) * 3)::int::text || '~' || ((floor(temperature / 3) * 3)::int + 2)::text || '도'
         end`,
         params,
         "temperature",
         `min(case
           when temperature is null then 99
-          when temperature < 0 then 0
-          when temperature < 10 then 1
-          when temperature < 20 then 2
-          when temperature < 30 then 3
-          else 4
+          else floor(temperature / 3)
         end)`
       ),
       filteredGroupedStats("station_seq::text || '. ' || station_name", params, "min(station_seq)"),

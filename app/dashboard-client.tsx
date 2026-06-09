@@ -492,7 +492,7 @@ function AnalysisView({
           {weatherMode === "temperature" ? (
             <AnalysisTable
               title={`${route} 온도별 보기`}
-              description="강남 기준 온도 구간별 평균 잔여좌석과 만차확률을 비교합니다."
+              description="강남 기준 관측 기온을 3도 간격으로 나눠 평균 잔여좌석과 만차확률을 비교합니다."
               columns={["온도", "평균 잔여좌석", "최소", "만차확률", "표본"]}
               rows={stats.byTemperature.map(rowToCells)}
             />
