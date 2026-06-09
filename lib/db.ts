@@ -21,9 +21,30 @@ if (process.env.NODE_ENV !== "production") {
   globalThis.busmanchaPool = pool;
 }
 
+const retryableMessages = ["max clients reached", "Connection terminated", "timeout"];
+
+function isRetryableDbError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return retryableMessages.some((message) => error.message.includes(message));
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function query<T extends QueryResultRow>(text: string, params: unknown[] = []) {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is not configured.");
   }
-  return pool.query<T>(text, params);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await pool.query<T>(text, params);
+    } catch (error) {
+      if (attempt === 2 || !isRetryableDbError(error)) {
+        throw error;
+      }
+      await sleep(300 * (attempt + 1));
+    }
+  }
+  throw new Error("Database query failed.");
 }
