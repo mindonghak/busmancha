@@ -17,12 +17,12 @@ export async function GET() {
         order by route_name, station_seq
         `
       ),
-      query<{ time_hhmm: string }>(
+      query<{ time_label: string }>(
         `
-        select distinct time_hhmm
+        select distinct lpad(split_part(time_hhmm, ':', 1), 2, '0') || '시' as time_label
         from seat_history
         where time_hhmm is not null
-        order by time_hhmm
+        order by time_label
         `
       ),
     ]);
@@ -30,7 +30,7 @@ export async function GET() {
     return NextResponse.json({
       routes: routes.rows.map((row) => row.route_name),
       weekdays,
-      times: times.rows.map((row) => row.time_hhmm),
+      times: times.rows.map((row) => row.time_label),
       stations: stations.rows,
       weatherConditions: ["강수없음", "비", "눈"],
     });

@@ -30,6 +30,13 @@ const weekdayMap = new Map([
   ["일요일", 6],
 ]);
 
+function parseHour(value: string) {
+  const match = value.match(/^(\d{1,2})(?::\d{2})?시?$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  return Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : null;
+}
+
 const baseCte = `
   with daily_weather as (
     select
@@ -82,7 +89,15 @@ function buildWhere(params: URLSearchParams, skip: string | null = null) {
       clauses.push(`day_of_week = $${values.length}`);
     }
   }
-  if (skip !== "time" && time && time !== "전체") add("time_hhmm", time);
+  if (skip !== "time" && time && time !== "전체") {
+    const hour = parseHour(time);
+    if (hour !== null) {
+      values.push(hour);
+      clauses.push(`split_part(time_hhmm, ':', 1)::int = $${values.length}`);
+    } else {
+      add("time_hhmm", time);
+    }
+  }
   if (skip !== "station" && station && station !== "전체") add("station_name", station);
   if (skip !== "weather" && weather && weather !== "전체") {
     if (weather === "강수없음" || weather === "비" || weather === "눈") {
