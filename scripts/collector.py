@@ -300,6 +300,35 @@ def any_route_in_service(route_names: list[str], now: datetime) -> bool:
     return any(is_within_service_window(route_name, now) for route_name in route_names)
 
 
+def is_seoul_station(station: dict[str, str]) -> bool:
+    return station.get("regionName", "") == "서울"
+
+
+def collection_stations(
+    route_name: str,
+    service_stations: list[dict[str, str]],
+    first_stops_only: bool,
+    max_stations_per_route: int | None,
+) -> list[dict[str, str]]:
+    selected_stations = service_stations
+    if first_stops_only:
+        limit = DEFAULT_STATION_LIMITS.get(route_name, 12)
+        selected_by_key: dict[tuple[str, str], dict[str, str]] = {}
+        for station in service_stations[:limit]:
+            selected_by_key[(station.get("stationId", ""), station.get("stationSeq", ""))] = station
+        for station in service_stations:
+            if is_seoul_station(station):
+                selected_by_key[(station.get("stationId", ""), station.get("stationSeq", ""))] = station
+        selected_stations = [
+            station
+            for station in service_stations
+            if (station.get("stationId", ""), station.get("stationSeq", "")) in selected_by_key
+        ]
+    if max_stations_per_route is not None:
+        selected_stations = selected_stations[:max_stations_per_route]
+    return selected_stations
+
+
 def latest_weather_base(now: datetime) -> tuple[str, str, datetime]:
     base = now - timedelta(minutes=45)
     observed = base.replace(minute=0, second=0, microsecond=0)
@@ -531,11 +560,12 @@ def collect_once(
             continue
 
         service_stations = [station for station in stations if not is_pass_through_station(station)]
-        selected_stations = service_stations
-        if first_stops_only:
-            selected_stations = service_stations[: DEFAULT_STATION_LIMITS.get(route_name, 12)]
-        if max_stations_per_route is not None:
-            selected_stations = selected_stations[:max_stations_per_route]
+        selected_stations = collection_stations(
+            route_name,
+            service_stations,
+            first_stops_only,
+            max_stations_per_route,
+        )
 
         route_rows = []
         quota_exceeded = False
