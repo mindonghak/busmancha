@@ -2,6 +2,8 @@ import argparse
 import json
 import os
 import sqlite3
+import subprocess
+import sys
 import time
 import urllib.parse
 import urllib.request
@@ -14,6 +16,7 @@ from urllib.error import HTTPError
 ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = ROOT / "data" / "busmancha.sqlite3"
 LOG_PATH = ROOT / "data" / "collector.log"
+POSTGRES_SYNC_SCRIPT = ROOT / "scripts" / "sync_sqlite_to_postgres.py"
 
 ROUTES = {
     "M4137": "234001622",
@@ -80,6 +83,29 @@ def log(message: str) -> None:
     stamp = datetime.now().isoformat(timespec="seconds")
     LOG_PATH.open("a", encoding="utf-8").write(f"{stamp} {message}\n")
     print(f"{stamp} {message}")
+
+
+def sync_postgres_if_configured() -> None:
+    if not os.environ.get("DATABASE_URL"):
+        return
+    try:
+        result = subprocess.run(
+            [sys.executable, str(POSTGRES_SYNC_SCRIPT)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except Exception as exc:  # noqa: BLE001 - local collection should continue even if sync fails.
+        log(f"postgres_sync_error={exc}")
+        return
+
+    if result.returncode == 0:
+        log(f"postgres_sync {result.stdout.strip()}")
+    else:
+        message = (result.stderr or result.stdout).strip().replace("\n", " ")[:500]
+        log(f"postgres_sync_failed code={result.returncode} detail={message}")
 
 
 def fetch_text(url: str, params: dict[str, str], timeout: int = 20) -> str:
@@ -563,6 +589,7 @@ def main() -> int:
         help="Collect only early boarding stops for each route to reduce API calls.",
     )
     parser.add_argument("--no-weather", action="store_true", help="Disable weather collection.")
+    parser.add_argument("--no-postgres-sync", action="store_true", help="Disable PostgreSQL sync after each batch.")
     parser.add_argument(
         "--routes",
         default=",".join(ROUTES.keys()),
@@ -588,6 +615,8 @@ def main() -> int:
                 args.first_stops_only,
                 not args.no_weather,
             )
+            if not args.no_postgres_sync:
+                sync_postgres_if_configured()
             return 0
 
         while True:
@@ -600,6 +629,8 @@ def main() -> int:
                 args.first_stops_only,
                 not args.no_weather,
             )
+            if not args.no_postgres_sync:
+                sync_postgres_if_configured()
             elapsed = time.time() - started
             sleep_for = max(0, args.interval_seconds - elapsed)
             log(f"sleep_seconds={sleep_for:.1f}")
