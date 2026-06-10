@@ -218,7 +218,12 @@ export async function GET(request: NextRequest) {
     ] = await Promise.all([
       groupedStats("route_name", params, "route"),
       groupedStats("station_seq::text || '. ' || station_name", params, "station", "min(station_seq)"),
-      groupedStats("time_hhmm", params, "time", "label"),
+      groupedStats(
+        "lpad(split_part(time_hhmm, ':', 1), 2, '0') || '시'",
+        params,
+        "time",
+        "min(split_part(time_hhmm, ':', 1)::int)"
+      ),
       groupedStats(
         `case day_of_week
           when 0 then '월요일'
