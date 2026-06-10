@@ -174,12 +174,7 @@ export default function DashboardClient() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">광역버스 잔여좌석 통계</p>
           <h1>버스만차</h1>
-        </div>
-        <div className="status">
-          <span className="dot" />
-          실제 수집 데이터 조회
         </div>
       </header>
 
