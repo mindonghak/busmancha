@@ -183,11 +183,6 @@ export default function DashboardClient() {
         </div>
       </header>
 
-      <section className="heroText">
-        <h2>검색은 조건을 직접 좁히고, 분석은 버스별 패턴을 따로 살펴봅니다.</h2>
-        <p>날씨 통계는 지역별로 나누지 않고 강남 기준 일별 대표 날씨와 최고기온으로 계산합니다.</p>
-      </section>
-
       <nav className="tabs mainTabs topTabs" aria-label="상단 탭">
         {mainTabs.map((tab) => (
           <button className={activeTab === tab.id ? "active" : ""} key={tab.id} onClick={() => setActiveTab(tab.id)}>
