@@ -20,6 +20,8 @@ type GroupRow = {
   full_probability: string | null;
 };
 
+const MIN_STATION_SAMPLE_COUNT = 10;
+
 const weekdayMap = new Map([
   ["월요일", 0],
   ["화요일", 1],
@@ -111,7 +113,13 @@ function buildWhere(params: URLSearchParams, skip: string | null = null) {
   };
 }
 
-async function groupedStats(labelSql: string, params: URLSearchParams, skip: string, orderSql = "label") {
+async function groupedStats(
+  labelSql: string,
+  params: URLSearchParams,
+  skip: string,
+  orderSql = "label",
+  minSampleCount = 0
+) {
   const { where, values } = buildWhere(params, skip);
   const result = await query<GroupRow>(
     `
@@ -125,6 +133,7 @@ async function groupedStats(labelSql: string, params: URLSearchParams, skip: str
     from seat_weather
     ${where}
     group by label
+    ${minSampleCount > 0 ? `having count(*) >= ${minSampleCount}` : ""}
     order by ${orderSql}
     limit 100
     `,
@@ -133,7 +142,12 @@ async function groupedStats(labelSql: string, params: URLSearchParams, skip: str
   return result.rows;
 }
 
-async function filteredGroupedStats(labelSql: string, params: URLSearchParams, orderSql = "label") {
+async function filteredGroupedStats(
+  labelSql: string,
+  params: URLSearchParams,
+  orderSql = "label",
+  minSampleCount = 0
+) {
   const { where, values } = buildWhere(params);
   const result = await query<GroupRow>(
     `
@@ -147,6 +161,7 @@ async function filteredGroupedStats(labelSql: string, params: URLSearchParams, o
     from seat_weather
     ${where}
     group by label
+    ${minSampleCount > 0 ? `having count(*) >= ${minSampleCount}` : ""}
     order by ${orderSql}
     limit 100
     `,
@@ -232,7 +247,13 @@ export async function GET(request: NextRequest) {
       filteredByStation,
     ] = await Promise.all([
       groupedStats("route_name", params, "route"),
-      groupedStats("station_seq::text || '. ' || station_name", params, "station", "min(station_seq)"),
+      groupedStats(
+        "station_seq::text || '. ' || station_name",
+        params,
+        "station",
+        "min(station_seq)",
+        MIN_STATION_SAMPLE_COUNT
+      ),
       groupedStats(
         "lpad(split_part(time_hhmm, ':', 1), 2, '0') || '시'",
         params,
@@ -255,7 +276,12 @@ export async function GET(request: NextRequest) {
       ),
       weatherGroupedStats(params),
       temperatureGroupedStats(params),
-      filteredGroupedStats("station_seq::text || '. ' || station_name", params, "min(station_seq)"),
+      filteredGroupedStats(
+        "station_seq::text || '. ' || station_name",
+        params,
+        "min(station_seq)",
+        MIN_STATION_SAMPLE_COUNT
+      ),
     ]);
 
     return NextResponse.json({

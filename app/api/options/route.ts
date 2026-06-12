@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 
+const MIN_STATION_SAMPLE_COUNT = 10;
 const weekdays = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"];
 
 export async function GET() {
@@ -9,11 +10,15 @@ export async function GET() {
       query<{ route_name: string }>("select distinct route_name from seat_history order by route_name"),
       query<{ route_name: string; station_id: string; station_name: string; station_seq: number }>(
         `
-        select distinct route_name, station_id, station_name, station_seq
+        select route_name, station_id, station_name, station_seq
         from seat_history
         where station_name is not null
+          and remain_seat is not null
+          and remain_seat >= 0
           and station_name not like '%(경유)%'
           and station_name not like '%(미정차)%'
+        group by route_name, station_id, station_name, station_seq
+        having count(*) >= ${MIN_STATION_SAMPLE_COUNT}
         order by route_name, station_seq
         `
       ),
