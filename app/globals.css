@@ -197,7 +197,7 @@ select {
 }
 
 .mainTabs {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .topTabs {
@@ -485,6 +485,102 @@ select {
   overflow-x: auto;
 }
 
+.crowdingPanel {
+  margin-bottom: 14px;
+}
+
+.hotspotGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.hotspotCard {
+  background: #f8fafb;
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  min-height: 168px;
+  padding: 14px;
+}
+
+.hotspotCard.riskHigh {
+  background: #fff1f0;
+  border-color: #f3b3ad;
+}
+
+.hotspotCard.riskMedium {
+  background: #fff8e7;
+  border-color: #efd38a;
+}
+
+.hotspotCard.riskLow {
+  background: #eef8f3;
+  border-color: #b9decf;
+}
+
+.hotspotCard .rank {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.hotspotCard strong {
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.hotspotTime {
+  color: var(--green);
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.hotspotCard dl {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.hotspotCard dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hotspotCard dd {
+  font-weight: 900;
+  margin: 4px 0 0;
+}
+
+.crowdingTable {
+  margin-top: 8px;
+}
+
+.riskPill {
+  display: inline-block;
+  font-weight: 900;
+  min-width: 58px;
+  padding: 5px 8px;
+  text-align: center;
+}
+
+.riskPill.riskHigh {
+  background: #ffe0dd;
+  color: #a3291d;
+}
+
+.riskPill.riskMedium {
+  background: #fff0bd;
+  color: #7a5300;
+}
+
+.riskPill.riskLow {
+  background: #dff3ea;
+  color: #116449;
+}
+
 table {
   border-collapse: collapse;
   min-width: 540px;
@@ -539,7 +635,8 @@ tr:last-child td {
   }
 
   .summaryStrip,
-  .tabs {
+  .tabs,
+  .hotspotGrid {
     grid-template-columns: 1fr;
   }
 

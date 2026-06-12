@@ -20,6 +20,16 @@ type GroupRow = {
   full_probability: string | null;
 };
 
+type HotspotRow = {
+  station_label: string;
+  station_seq: number;
+  time_label: string;
+  sample_count: string;
+  avg_seat: string | null;
+  min_seat: number | null;
+  full_probability: string | null;
+};
+
 const MIN_STATION_SAMPLE_COUNT = 10;
 
 const weekdayMap = new Map([
@@ -214,6 +224,35 @@ async function temperatureGroupedStats(params: URLSearchParams) {
   return result.rows;
 }
 
+async function hotspotStats(params: URLSearchParams) {
+  const { where, values } = buildWhere(params);
+  const result = await query<HotspotRow>(
+    `
+    ${baseCte}
+    select
+      station_seq::text || '. ' || station_name as station_label,
+      station_seq::int as station_seq,
+      lpad(split_part(time_hhmm, ':', 1), 2, '0') || '시' as time_label,
+      count(*)::text as sample_count,
+      round(avg(remain_seat)::numeric, 1)::text as avg_seat,
+      min(remain_seat)::int as min_seat,
+      round(avg(case when remain_seat <= 0 then 1.0 else 0.0 end)::numeric * 100, 1)::text as full_probability
+    from seat_weather
+    ${where}
+    group by station_seq, station_name, split_part(time_hhmm, ':', 1)
+    having count(*) >= ${MIN_STATION_SAMPLE_COUNT}
+    order by
+      avg(case when remain_seat <= 0 then 1.0 else 0.0 end) desc,
+      avg(remain_seat) asc,
+      station_seq asc,
+      min(split_part(time_hhmm, ':', 1)::int) asc
+    limit 60
+    `,
+    values
+  );
+  return result.rows;
+}
+
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
 
@@ -245,6 +284,7 @@ export async function GET(request: NextRequest) {
       byWeather,
       byTemperature,
       filteredByStation,
+      hotspots,
     ] = await Promise.all([
       groupedStats("route_name", params, "route"),
       groupedStats(
@@ -282,6 +322,7 @@ export async function GET(request: NextRequest) {
         "min(station_seq)",
         MIN_STATION_SAMPLE_COUNT
       ),
+      hotspotStats(params),
     ]);
 
     return NextResponse.json({
@@ -293,6 +334,7 @@ export async function GET(request: NextRequest) {
       byWeather,
       byTemperature,
       filteredByStation,
+      hotspots,
     });
   } catch (error) {
     return NextResponse.json(
