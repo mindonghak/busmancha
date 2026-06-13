@@ -92,6 +92,7 @@ function buildWhere(params: URLSearchParams, skip: string | null = null) {
   const time = params.get("time");
   const station = params.get("station");
   const weather = params.get("weather");
+  const dayType = params.get("dayType");
 
   if (skip !== "route" && route && route !== "전체") add("route_name", route);
   if (skip !== "weekday" && weekday && weekday !== "전체") {
@@ -100,6 +101,12 @@ function buildWhere(params: URLSearchParams, skip: string | null = null) {
       values.push(value);
       clauses.push(`day_of_week = $${values.length}`);
     }
+  }
+  if (dayType === "평일") {
+    clauses.push("day_of_week between 0 and 4");
+  }
+  if (dayType === "주말") {
+    clauses.push("day_of_week between 5 and 6");
   }
   if (skip !== "time" && time && time !== "전체") {
     const hour = parseHour(time);

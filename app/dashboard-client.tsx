@@ -64,6 +64,7 @@ type WeatherAnalysisMode = "precipitation" | "temperature";
 type SearchResultMode = "summary" | "station" | "time" | "weekday" | "weather";
 
 const allValue = "전체";
+const dayTypeOptions = ["전체", "평일", "주말"];
 const mainTabs: { id: MainTab; label: string }[] = [
   { id: "search", label: "검색" },
   { id: "analysis", label: "분석" },
@@ -89,7 +90,9 @@ export default function DashboardClient() {
   const [analysisRoute, setAnalysisRoute] = useState("");
   const [analysisResultRoute, setAnalysisResultRoute] = useState("");
   const [crowdingRoute, setCrowdingRoute] = useState("");
+  const [crowdingDayType, setCrowdingDayType] = useState(allValue);
   const [crowdingResultRoute, setCrowdingResultRoute] = useState("");
+  const [crowdingResultDayType, setCrowdingResultDayType] = useState(allValue);
   const [activeTab, setActiveTab] = useState<MainTab>("search");
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("station");
   const [loading, setLoading] = useState(true);
@@ -194,9 +197,11 @@ export default function DashboardClient() {
       setLoading(true);
       setError(null);
       const params = new URLSearchParams({ route: crowdingRoute });
+      if (crowdingDayType !== allValue) params.set("dayType", crowdingDayType);
       const body = await fetchJson<StatsResponse>(`/api/stats?${params.toString()}`);
       setCrowdingStats(body);
       setCrowdingResultRoute(crowdingRoute);
+      setCrowdingResultDayType(crowdingDayType);
       setLoading(false);
     } catch (err) {
       setLoading(false);
@@ -315,12 +320,20 @@ export default function DashboardClient() {
               <p className="eyebrow">만차지도</p>
               <h2>버스별 만차 시간과 정류장</h2>
             </div>
-            <form className="analysisForm" onSubmit={submitCrowding}>
+            <form className="analysisForm crowdingForm" onSubmit={submitCrowding}>
               <label>
                 <span>버스번호</span>
                 <select value={crowdingRoute} onChange={(event) => setCrowdingRoute(event.target.value)}>
                   <option value="">선택</option>
                   {(options?.routes ?? []).map((item) => (
+                    <option key={item}>{item}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>구분</span>
+                <select value={crowdingDayType} onChange={(event) => setCrowdingDayType(event.target.value)}>
+                  {dayTypeOptions.map((item) => (
                     <option key={item}>{item}</option>
                   ))}
                 </select>
@@ -332,7 +345,7 @@ export default function DashboardClient() {
           </section>
 
           {!crowdingStats && !loading ? <div className="emptyState">버스번호를 선택한 뒤 만차 조회 버튼을 누르면 결과가 표시됩니다.</div> : null}
-          {crowdingStats ? <CrowdingView route={crowdingResultRoute} rows={crowdingStats.hotspots} /> : null}
+          {crowdingStats ? <CrowdingView route={crowdingResultRoute} dayType={crowdingResultDayType} rows={crowdingStats.hotspots} /> : null}
         </section>
       ) : null}
     </main>
@@ -603,11 +616,12 @@ function StationView({ rows, selectedRoute }: { rows: GroupRow[]; selectedRoute:
   );
 }
 
-function CrowdingView({ route, rows }: { route: string; rows: HotspotRow[] }) {
+function CrowdingView({ route, dayType, rows }: { route: string; dayType: string; rows: HotspotRow[] }) {
   const topRows = rows.slice(0, 6);
+  const label = dayType === allValue ? "전체" : dayType;
 
   if (!rows.length) {
-    return <div className="emptyState">표본 10건 이상인 만차 구간이 아직 없습니다.</div>;
+    return <div className="emptyState">{label} 기준으로 표본 10건 이상인 만차 구간이 아직 없습니다.</div>;
   }
 
   return (
@@ -615,7 +629,7 @@ function CrowdingView({ route, rows }: { route: string; rows: HotspotRow[] }) {
       <div className="sectionHead">
         <div>
           <p className="eyebrow">만차 우선순위</p>
-          <h2>{route}에서 먼저 봐야 할 정류장과 시간대</h2>
+          <h2>{route} {label} 기준으로 먼저 봐야 할 정류장과 시간대</h2>
         </div>
         <p>표본 10건 이상인 정류장·시간대 조합을 만차확률 높은 순서로 정렬했습니다.</p>
       </div>

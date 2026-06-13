@@ -273,6 +273,10 @@ select {
   grid-template-columns: minmax(0, 1fr) 120px;
 }
 
+.crowdingForm {
+  grid-template-columns: minmax(0, 1fr) 120px 120px;
+}
+
 .analysisControls label,
 .analysisForm label {
   display: grid;
