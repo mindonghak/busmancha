@@ -1,0 +1,43 @@
+name: Collect bus data
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: busmancha-collector
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call collector endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET repository secret is missing."
+            exit 1
+          fi
+
+          response_file="$(mktemp)"
+          status_code="$(
+            curl --silent --show-error \
+              --request GET \
+              --header "Authorization: Bearer ${CRON_SECRET}" \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              --max-time 240 \
+              https://busmancha.vercel.app/api/collect
+          )"
+
+          cat "$response_file"
+          echo
+
+          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
+            echo "Collector failed with HTTP ${status_code}"
+            exit 1
+          fi
