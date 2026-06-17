@@ -1,6 +1,9 @@
 name: Collect bus data
 
 on:
+  push:
+    branches:
+      - master
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
