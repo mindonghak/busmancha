@@ -92,7 +92,7 @@ def sqlite_rows(sqlite_conn: sqlite3.Connection, table_name: str, last_id: int, 
 
 
 def max_postgres_id(conn: psycopg.Connection, table_name: str) -> int:
-    row = conn.execute(f"select coalesce(max(id), 0) from {table_name}").fetchone()
+    row = conn.execute(f"select coalesce(max(id), 0) from {table_name} where id < 1000000000000").fetchone()
     return int(row[0]) if row else 0
 
 
