@@ -118,6 +118,14 @@ export default function DashboardClient() {
     const body = await fetchJson<StatsResponse>(`/api/stats?${params.toString()}`);
     setSearchStats(body);
     setActiveTab("search");
+    trackEvent("search_submit", {
+      tab: "search",
+      route_name: route,
+      weekday,
+      time_value: time,
+      station_name: station,
+      weather,
+    });
     setLoading(false);
   };
 
@@ -141,6 +149,7 @@ export default function DashboardClient() {
         setOptions(body);
         const firstRoute = body.routes?.[0] ?? "";
         setRoute(firstRoute);
+        trackEvent("page_view", { tab: "search" });
         if (!ignore) {
           setAnalysisStats(null);
           setCrowdingStats(null);
@@ -181,6 +190,10 @@ export default function DashboardClient() {
       if (body) {
         setAnalysisStats(body);
         setAnalysisResultRoute(analysisRoute);
+        trackEvent("analysis_submit", {
+          tab: "analysis",
+          route_name: analysisRoute,
+        });
       }
       setLoading(false);
     } catch (err) {
@@ -202,6 +215,11 @@ export default function DashboardClient() {
       setCrowdingStats(body);
       setCrowdingResultRoute(crowdingRoute);
       setCrowdingResultDayType(crowdingDayType);
+      trackEvent("crowding_submit", {
+        tab: "crowding",
+        route_name: crowdingRoute,
+        day_type: crowdingDayType,
+      });
       setLoading(false);
     } catch (err) {
       setLoading(false);
@@ -219,7 +237,14 @@ export default function DashboardClient() {
 
       <nav className="tabs mainTabs topTabs" aria-label="상단 탭">
         {mainTabs.map((tab) => (
-          <button className={activeTab === tab.id ? "active" : ""} key={tab.id} onClick={() => setActiveTab(tab.id)}>
+          <button
+            className={activeTab === tab.id ? "active" : ""}
+            key={tab.id}
+            onClick={() => {
+              setActiveTab(tab.id);
+              trackEvent("tab_view", { tab: tab.id });
+            }}
+          >
             {tab.label}
           </button>
         ))}
@@ -359,6 +384,31 @@ async function fetchJson<T>(url: string) {
     throw new Error(body.error ?? "데이터를 불러오지 못했습니다.");
   }
   return body as T;
+}
+
+function trackEvent(eventName: string, payload: Record<string, string | null | undefined> = {}) {
+  if (typeof window === "undefined") return;
+
+  const body = JSON.stringify({
+    event_name: eventName,
+    path: window.location.pathname,
+    ...payload,
+  });
+
+  if (navigator.sendBeacon) {
+    const blob = new Blob([body], { type: "application/json" });
+    navigator.sendBeacon("/api/events", blob);
+    return;
+  }
+
+  fetch("/api/events", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+    keepalive: true,
+  }).catch(() => {
+    // Analytics should never interrupt the page flow.
+  });
 }
 
 function Filter({
