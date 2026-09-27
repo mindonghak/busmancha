@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.error import HTTPError
+from api_budget import reserve
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -205,7 +206,8 @@ def get_route_stations(route_id: str) -> list[dict[str, str]]:
     return xml_items(payload, "busRouteStationList")
 
 
-def get_arrival(route_id: str, station_id: str, station_seq: str) -> dict[str, str] | None:
+def get_arrival(route_id: str, station_id: str, station_seq: str, private: bool = False) -> dict[str, str] | None:
+    reserve(DB_PATH, LOG_PATH, private)
     payload = fetch_text(
         GYEONGGI_ARRIVAL_URL,
         {
@@ -605,6 +607,7 @@ def collect_once(
 
 
 def main() -> int:
+    global DB_PATH
     load_dotenv()
 
     parser = argparse.ArgumentParser(description="Collect Gyeonggi bus arrival seat data.")
@@ -620,6 +623,7 @@ def main() -> int:
     )
     parser.add_argument("--no-weather", action="store_true", help="Disable weather collection.")
     parser.add_argument("--no-postgres-sync", action="store_true", help="Disable PostgreSQL sync after each batch.")
+    parser.add_argument("--include-private", action="store_true", help="Collect unpublished pilot routes within a separate daily budget.")
     parser.add_argument(
         "--routes",
         default=",".join(ROUTES.keys()),
@@ -632,6 +636,7 @@ def main() -> int:
         raise SystemExit(f"Unknown route names: {', '.join(unknown_routes)}")
 
     db_path = Path(args.db_path)
+    DB_PATH = db_path
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     with sqlite3.connect(db_path) as conn:
@@ -645,6 +650,9 @@ def main() -> int:
                 args.first_stops_only,
                 not args.no_weather,
             )
+            if args.include_private:
+                from private_collection import collect
+                collect(conn, sys.modules[__name__])
             if not args.no_postgres_sync:
                 sync_postgres_if_configured()
             return 0
@@ -659,6 +667,12 @@ def main() -> int:
                 args.first_stops_only,
                 not args.no_weather,
             )
+            if args.include_private:
+                from private_collection import collect
+                try:
+                    collect(conn, sys.modules[__name__])
+                except Exception as exc:
+                    log(f"private_collection_error={type(exc).__name__}")
             if not args.no_postgres_sync:
                 sync_postgres_if_configured()
             elapsed = time.time() - started

@@ -50,6 +50,7 @@ type HotspotRow = {
 };
 
 type StatsResponse = {
+  routeProfile: { direction: string; destination: string; stops: { seq: number; name: string; stats: GroupRow | null }[] } | null;
   nearbyTimes: GroupRow[];
   summary: Summary;
   byRoute: GroupRow[];
@@ -94,6 +95,10 @@ export default function DashboardClient() {
   const [days, setDays] = useState("");
   const [searchConditions, setSearchConditions] = useState({ route: "", weekday: allValue, time: allValue, station: allValue, weather: allValue });
   const [analysisRoute, setAnalysisRoute] = useState("");
+  const [analysisDirection, setAnalysisDirection] = useState("outbound");
+  const [analysisDayType, setAnalysisDayType] = useState("평일");
+  const [analysisTime, setAnalysisTime] = useState(allValue);
+  const [analysisContext, setAnalysisContext] = useState("");
   const [analysisResultRoute, setAnalysisResultRoute] = useState("");
   const [crowdingRoute, setCrowdingRoute] = useState("");
   const [crowdingDayType, setCrowdingDayType] = useState(allValue);
@@ -143,6 +148,12 @@ export default function DashboardClient() {
     setLoading(true);
     setError(null);
     const params = new URLSearchParams({ route: nextRoute });
+    params.set("direction", analysisDirection);
+    if (analysisDayType !== allValue) params.set("dayType", analysisDayType);
+    if (analysisTime !== allValue) {
+      params.set("time", analysisTime);
+      params.set("profile", "1");
+    }
     if (days) params.set("days", days);
     return fetchJson<StatsResponse>(`/api/stats?${params.toString()}`);
   };
@@ -198,6 +209,7 @@ export default function DashboardClient() {
       if (body) {
         setAnalysisStats(body);
         setAnalysisResultRoute(analysisRoute);
+        setAnalysisContext(`${analysisDirection === "return" ? "동탄 방면" : "서울 방면"} · ${analysisDayType} · ${analysisTime === allValue ? "모든 시간" : hourRange(analysisTime)}`);
         trackEvent("analysis_submit", {
           tab: "analysis",
           route_name: analysisRoute,
@@ -315,7 +327,7 @@ export default function DashboardClient() {
           <section className="panel analysisControls">
             <div>
               <p className="eyebrow">분석 조건</p>
-              <h2>버스별 분석</h2>
+              <h2>어디부터 만차가 잦을까요?</h2>
             </div>
             <form className="analysisForm" onSubmit={submitAnalysis}>
               <PeriodFilter value={days} onChange={setDays} />
@@ -328,6 +340,9 @@ export default function DashboardClient() {
                   ))}
                 </select>
               </label>
+              <label><span>방향</span><select aria-label="분석 방향" value={analysisDirection} onChange={(event) => setAnalysisDirection(event.target.value)}><option value="outbound">서울 방면 · 회차 전</option><option value="return">동탄 방면 · 회차점부터</option></select></label>
+              <Filter label="분석 요일" options={dayTypeOptions} value={analysisDayType} onChange={setAnalysisDayType} />
+              <Filter label="분석 시간" options={[allValue, ...(options?.times ?? [])]} value={analysisTime} onChange={setAnalysisTime} />
               <button className="primaryButton inlineButton" type="submit" disabled={loading || !analysisRoute}>
                 {loading ? "불러오는 중" : "분석 조회"}
               </button>
@@ -336,12 +351,15 @@ export default function DashboardClient() {
 
           {!analysisStats && !loading ? <div className="emptyState">버스번호를 선택한 뒤 분석 조회 버튼을 누르면 결과가 표시됩니다.</div> : null}
           {analysisStats ? (
+            <>
+            <p className="tripContext">{analysisResultRoute} · {analysisContext}</p>
             <AnalysisView
               mode={analysisMode}
               onModeChange={setAnalysisMode}
               stats={analysisStats}
               route={analysisResultRoute}
             />
+            </>
           ) : null}
         </section>
       ) : null}
@@ -587,7 +605,7 @@ function AnalysisView({
           </button>
         ))}
       </nav>
-      {mode === "station" ? <StationView rows={stats.byStation} selectedRoute={route} /> : null}
+      {mode === "station" ? stats.routeProfile ? <RouteProgress profile={stats.routeProfile} /> : <><p className="emptyState">시간대를 정하면 노선 순서에 따른 만차 관측 구간을 확인할 수 있습니다.</p><StationView rows={stats.byStation} selectedRoute={route} /></> : null}
       {mode === "time" ? (
         <AnalysisTable
           title={`${route} 시간대별 보기`}
@@ -678,6 +696,30 @@ function StationView({ rows, selectedRoute }: { rows: GroupRow[]; selectedRoute:
       </div>
     </section>
   );
+}
+
+function RouteProgress({ profile }: { profile: NonNullable<StatsResponse["routeProfile"]> }) {
+  const enough = (row: GroupRow | null) => !!row && Number(row.sample_count) >= 30 && Number(row.service_days) >= 3;
+  const first = profile.stops.find((stop) => enough(stop.stats) && Number(stop.stats!.full_probability) >= 50);
+  return <section className="routeProgress">
+    <p className="eyebrow">{profile.destination} 방면 · 노선 순서</p>
+    <h2>{first ? `${first.name}에서 처음 50% 이상 관측` : "만차가 잦아지는 시작점을 아직 특정하기 어렵습니다"}</h2>
+    <p className="outcomeCaution">30건·3일 이상 관측된 정류장 중 만차 비율 50% 이상인 첫 지점입니다. 정류장별로 서로 다른 차량의 도착정보를 집계했으므로 실제 한 차량이 여기서 만차가 됐다는 뜻은 아닙니다. 중간에 하차하면 이후 비율은 낮아질 수 있습니다.</p>
+    <div className="progressLegend"><span>관측 50% 이상</span><span>관측 50% 미만</span><span>표본 부족 / 미수집</span></div>
+    <ol className="progressStops">{profile.stops.map((stop) => {
+      const valid = enough(stop.stats);
+      const rate = Number(stop.stats?.full_probability ?? 0);
+      return <li key={stop.seq} className={!valid ? "unknownStop" : rate >= 50 ? "fullStop" : "measuredStop"}>
+        <span className="progressMarker">{stop.seq}</span>
+        <div className="progressBody"><strong>{stop.name}</strong>
+          <div className="progressTrack" role="img" aria-label={valid ? `만차 관측 ${rate}%` : "판단 자료 부족"}><span style={{width: valid ? `${rate}%` : "0%"}} /></div>
+          <small>{stop.stats ? `${stop.stats.service_days}일 · ${stop.stats.sample_count}건` : "수집 기록 없음"}</small>
+        </div>
+        <div className="progressValue"><strong>{valid ? `${rate}%` : "—"}</strong><small>{valid ? `평균 ${seatText(stop.stats!.avg_seat)}` : "판단 보류"}</small></div>
+      </li>;
+    })}</ol>
+    <p className="outcomeCaution">회색 정류장은 여유 좌석이 있다는 뜻이 아닙니다. 회차 전후를 구분했으며, API의 현재 정류장 순서 기준입니다.</p>
+  </section>;
 }
 
 function CrowdingView({ route, dayType, rows }: { route: string; dayType: string; rows: HotspotRow[] }) {

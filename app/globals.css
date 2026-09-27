@@ -277,14 +277,18 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--blue); out
   align-items: end;
   display: grid;
   gap: 18px;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  grid-template-columns: 1fr;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 0 0 18px;
 }
 
 .analysisForm {
   align-items: end;
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .crowdingForm {
@@ -694,6 +698,22 @@ tr:last-child td {
 .hourColumn span, .hourColumn strong, .hourColumn small { display: block; }
 .hourColumn span { font-size: 13px; }
 .comparisonLabel { min-height: 18px; }
+.progressLegend { display:flex; flex-wrap:wrap; gap:16px; margin:20px 0; font-size:12px; }
+.progressLegend span::before { content:""; display:inline-block; width:10px; height:10px; margin-right:6px; background:#b84d42; }
+.progressLegend span:nth-child(2)::before { background:var(--blue); }
+.progressLegend span:nth-child(3)::before { background:#a3adb3; }
+.progressStops { list-style:none; padding:0; margin:0; }
+.progressStops li { display:grid; grid-template-columns:36px minmax(0,1fr) 95px; gap:14px; align-items:center; position:relative; padding:14px 0; border-bottom:1px solid var(--line); }
+.progressMarker { display:grid; place-items:center; width:32px; height:32px; background:var(--blue); color:white; font-size:12px; }
+.fullStop .progressMarker { background:#b84d42; }
+.unknownStop .progressMarker { background:#737f87; }
+.progressBody strong { font-size:15px; overflow-wrap:anywhere; }
+.progressTrack { height:7px; background:#e1e7ea; margin:10px 0 6px; }
+.progressTrack span { display:block; height:100%; background:var(--blue); }
+.fullStop .progressTrack span { background:#b84d42; }
+.progressValue { text-align:right; }
+.progressValue strong { display:block; font-size:22px; }
+.progressStops small { display:block; color:var(--muted); font-size:12px; }
 .hourColumn strong { font-size: 20px; margin: 12px 0; }
 .hourColumn small { font-size: 11px; color: var(--muted); line-height: 1.6; }
 .selectedHour { border-top-color: var(--blue); background: #eaf2f8; }

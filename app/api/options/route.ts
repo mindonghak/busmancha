@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { publicRoutes } from "@/lib/public-routes";
 
 const MIN_STATION_SAMPLE_COUNT = 10;
 const weekdays = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"];
@@ -33,10 +34,10 @@ export async function GET() {
     ]);
 
     return NextResponse.json({
-      routes: routes.rows.map((row) => row.route_name),
+      routes: routes.rows.map((row) => row.route_name).filter((name) => publicRoutes.includes(name)),
       weekdays,
       times: times.rows.map((row) => row.time_label),
-      stations: stations.rows,
+      stations: stations.rows.filter((row) => publicRoutes.includes(row.route_name)),
       weatherConditions: ["강수없음", "비", "눈"],
     });
   } catch (error) {

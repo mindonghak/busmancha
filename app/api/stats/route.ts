@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { publicRoutes } from "@/lib/public-routes";
+import catalog from "@/config/route-catalog.json";
 
 type SummaryRow = {
   sample_count: string;
@@ -96,6 +98,11 @@ function buildWhere(params: URLSearchParams, skip: string | null = null) {
   };
 
   const route = params.get("route");
+  const metadata = catalog[route as keyof typeof catalog];
+  if (metadata && ["outbound", "return"].includes(params.get("direction") ?? "")) {
+    values.push(Number(metadata.stations[0].turnSeq));
+    clauses.push(`station_seq ${params.get("direction") === "return" ? ">=" : "<"} $${values.length}`);
+  }
   const weekday = params.get("weekday");
   const time = params.get("time");
   const station = params.get("station");
@@ -272,7 +279,7 @@ async function hotspotStats(params: URLSearchParams) {
 
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
-  if (!["6002", "G6009", "M4130", "M4137"].includes(params.get("route") ?? "")) {
+  if (!publicRoutes.includes(params.get("route") ?? "")) {
     return NextResponse.json({ error: "버스번호를 선택해 주세요." }, { status: 400 });
   }
   if (params.has("days") && !["7", "30", "90"].includes(params.get("days")!)) {
@@ -280,6 +287,12 @@ export async function GET(request: NextRequest) {
   }
   if (params.has("stationSeq") && !/^\d{1,3}$/.test(params.get("stationSeq")!)) {
     return NextResponse.json({ error: "정류장 순서가 올바르지 않습니다." }, { status: 400 });
+  }
+  if (params.has("direction") && !["outbound", "return"].includes(params.get("direction")!)) {
+    return NextResponse.json({ error: "방향을 선택해 주세요." }, { status: 400 });
+  }
+  if (params.get("profile") === "1" && (!params.has("direction") || parseHour(params.get("time") ?? "") === null)) {
+    return NextResponse.json({ error: "노선 흐름은 방향과 시간대를 선택해 주세요." }, { status: 400 });
   }
 
   try {
@@ -359,7 +372,26 @@ export async function GET(request: NextRequest) {
       ? await filteredGroupedStats("lpad(split_part(time_hhmm, ':', 1), 2, '0') || '시'", comparisonParams, "min(split_part(time_hhmm, ':', 1)::int)")
       : [];
 
+    let routeProfile = null;
+    if (params.get("profile") === "1") {
+      const metadata = catalog[params.get("route") as keyof typeof catalog];
+      const observed = await filteredGroupedStats("station_seq::text", params, "min(station_seq)");
+      const turn = Number(metadata.stations[0].turnSeq);
+      const direction = params.get("direction");
+      routeProfile = {
+        direction,
+        destination: direction === "return" ? metadata.info.startStationName : metadata.info.endStationName,
+        stops: metadata.stations.filter((stop) => !/\((경유|미정차)\)/.test(stop.stationName))
+          .filter((stop) => direction === "return" ? Number(stop.stationSeq) >= turn : Number(stop.stationSeq) < turn)
+          .map((stop) => ({
+            seq: Number(stop.stationSeq), name: stop.stationName,
+            stats: observed.find((row) => Number(row.label) === Number(stop.stationSeq)) ?? null,
+          })),
+      };
+    }
+
     return NextResponse.json({
+      routeProfile,
       nearbyTimes,
       summary: summary.rows[0],
       byRoute,
