@@ -1,6 +1,7 @@
 """Low-volume, rotating collection of routes not published on the website."""
 import json
 from datetime import datetime
+from itertools import zip_longest
 
 
 def active(info, station, now):
@@ -26,6 +27,9 @@ def collect(conn, api):
             api.log(f"private route={name} skipped=refresh_metadata_required")
             continue
         stops = [s for s in meta["stations"] if not api.is_pass_through_station(s) and active(meta["info"], s, now)]
+        outward = [s for s in stops if int(s["stationSeq"]) < int(s["turnSeq"])]
+        returning = [s for s in stops if int(s["stationSeq"]) >= int(s["turnSeq"])]
+        stops = [s for pair in zip_longest(outward, returning) for s in pair if s is not None]
         if not stops:
             continue
         row = conn.execute("select position from private_cursor where route_id=?", (route_id,)).fetchone()
