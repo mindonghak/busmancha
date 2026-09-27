@@ -20,6 +20,7 @@ type OptionsResponse = {
 type Summary = {
   sample_count: string;
   service_days: string;
+  full_count: string;
   avg_seat: string | null;
   min_seat: number | null;
   max_seat: number | null;
@@ -32,6 +33,7 @@ type Summary = {
 type GroupRow = {
   label: string;
   sample_count: string;
+  service_days?: string;
   avg_seat: string | null;
   min_seat: number | null;
   full_probability: string | null;
@@ -48,6 +50,7 @@ type HotspotRow = {
 };
 
 type StatsResponse = {
+  nearbyTimes: GroupRow[];
   summary: Summary;
   byRoute: GroupRow[];
   byStation: GroupRow[];
@@ -67,9 +70,9 @@ type SearchResultMode = "summary" | "station" | "time" | "weekday" | "weather";
 const allValue = "전체";
 const dayTypeOptions = ["전체", "평일", "주말"];
 const mainTabs: { id: MainTab; label: string }[] = [
-  { id: "search", label: "검색" },
-  { id: "analysis", label: "분석" },
-  { id: "crowding", label: "만차지도" },
+  { id: "search", label: "내 탑승 조건" },
+  { id: "analysis", label: "노선별 비교" },
+  { id: "crowding", label: "혼잡 구간" },
 ];
 const analysisTabs: { id: AnalysisMode; label: string }[] = [
   { id: "station", label: "정류장별" },
@@ -114,14 +117,16 @@ export default function DashboardClient() {
     if (!route) throw new Error("버스번호를 선택해 주세요.");
     params.set("route", route);
     if (days) params.set("days", days);
-    if (weekday !== allValue) params.set("weekday", weekday);
+    if (["평일", "주말"].includes(weekday)) params.set("dayType", weekday);
+    else if (weekday !== allValue) params.set("weekday", weekday);
     if (time !== allValue) params.set("time", time);
-    if (station !== allValue) params.set("station", station);
+    if (station !== allValue) params.set("stationSeq", station);
     if (weather !== allValue) params.set("weather", weather);
 
     const body = await fetchJson<StatsResponse>(`/api/stats?${params.toString()}`);
     setSearchStats(body);
-    setSearchConditions({ route, weekday, time, station, weather });
+    const stationLabel = filteredStations.find((item) => String(item.station_seq) === station);
+    setSearchConditions({ route, weekday, time, station: stationLabel ? `${stationLabel.station_seq}. ${stationLabel.station_name}` : allValue, weather });
     trackEvent("search_submit", {
       tab: "search",
       route_name: route,
@@ -171,7 +176,7 @@ export default function DashboardClient() {
   }, []);
 
   useEffect(() => {
-    if (station !== allValue && !filteredStations.some((item) => item.station_name === station)) {
+    if (station !== allValue && !filteredStations.some((item) => String(item.station_seq) === station)) {
       setStation(allValue);
     }
   }, [filteredStations, station]);
@@ -261,37 +266,38 @@ export default function DashboardClient() {
           <aside className="filterPanel">
             <div className="sectionHead compact">
               <div>
-                <p className="eyebrow">검색 조건</p>
-                <h2>직접 고르기</h2>
+                <p className="eyebrow">내 탑승 조건</p>
+                <h2>어디서, 언제 타시나요?</h2>
               </div>
             </div>
             <form onSubmit={submit}>
               <Filter label="버스번호" options={["", ...(options?.routes ?? [])]} value={route} onChange={setRoute} />
-              <PeriodFilter value={days} onChange={setDays} />
-              <Filter label="요일" options={[allValue, ...(options?.weekdays ?? [])]} value={weekday} onChange={setWeekday} />
+              <label><span>타는 정류장</span><select aria-label="타는 정류장" value={station} disabled={!route} onChange={(event) => setStation(event.target.value)}>
+                <option value={allValue}>전체 정류장</option>
+                {filteredStations.map((item) => <option key={`${item.station_id}-${item.station_seq}`} value={String(item.station_seq)}>{item.station_seq}. {item.station_name}</option>)}
+              </select></label>
+              <Filter label="요일" options={[allValue, "평일", "주말", ...(options?.weekdays ?? [])]} value={weekday} onChange={setWeekday} />
               <Filter label="시간" options={[allValue, ...(options?.times ?? [])]} value={time} onChange={setTime} />
-              <Filter
-                label="정류장"
-                options={[allValue, ...filteredStations.map((item) => item.station_name)]}
-                value={station}
-                onChange={setStation}
-              />
+              <details className="extraFilters"><summary>추가 조건 · {weather === allValue ? "모든 날씨" : weather} · {days ? `최근 ${days}일` : "전체 기간"}</summary>
               <Filter label="날씨" options={[allValue, ...(options?.weatherConditions ?? [])]} value={weather} onChange={setWeather} />
+              <PeriodFilter value={days} onChange={setDays} />
+              </details>
               <button className="primaryButton" type="submit" disabled={loading || !route}>
-                {loading ? "불러오는 중" : "검색"}
+                {loading ? "조회 중" : "만차 기록 확인"}
               </button>
             </form>
           </aside>
 
           <section className="results">
             {!error && !loading && searchStats && Number(searchStats.summary?.sample_count ?? 0) === 0 ? (
-              <div className="emptyState">조건에 맞는 수집 데이터가 아직 없습니다.</div>
+              <div className="emptyState">조건에 맞는 기록이 없습니다. 날씨나 요일 조건을 넓히거나 조회 기간을 바꿔보세요.</div>
             ) : null}
             {!searchStats && !loading ? (
-              <div className="emptyState">검색 조건을 고른 뒤 검색 버튼을 누르면 결과가 표시됩니다.</div>
+              <div className="searchPlaceholder"><p className="eyebrow">과거 탑승 여건</p><h2>내 정류장의 만차 기록</h2><div className="placeholderMetrics"><span>만차 관측 비율 <strong>— %</strong></span><span>평균 잔여좌석 <strong>— 석</strong></span></div></div>
             ) : null}
             {searchStats ? (
               <SearchResult
+                nearbyTimes={searchStats.nearbyTimes ?? []}
                 summary={searchStats.summary}
                 byTime={searchStats.byTime}
                 byWeekday={searchStats.byWeekday}
@@ -428,9 +434,9 @@ function Filter({
   return (
     <label>
       <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
+      <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => (
-          <option key={option} value={option}>{option || "선택"}</option>
+          <option key={option} value={option}>{label === "시간" && option !== allValue ? hourRange(option) : (option || "선택")}</option>
         ))}
       </select>
     </label>
@@ -438,6 +444,7 @@ function Filter({
 }
 
 function SearchResult({
+  nearbyTimes,
   summary,
   byTime,
   byWeekday,
@@ -449,6 +456,7 @@ function SearchResult({
   station,
   weather,
 }: {
+  nearbyTimes: GroupRow[];
   summary: Summary;
   byTime: GroupRow[];
   byWeekday: GroupRow[];
@@ -478,18 +486,19 @@ function SearchResult({
 
   return (
     <>
-      <DataCoverage summary={summary} />
+      <BoardingOutcome summary={summary} route={route} station={station} time={time} weekday={weekday} />
+      {station !== allValue && time !== allValue ? <NearbyTimes rows={nearbyTimes} selectedTime={time} /> : null}
       <section className="panel noTopPadding">
         <div className="sectionHead">
           <div>
             <p className="eyebrow">검색 결과</p>
-            <h2>{route} 좌석 통계</h2>
+            <h2>{route} 상세 통계</h2>
           </div>
           <p>{dateRange(summary.first_collected_at, summary.last_collected_at)}</p>
         </div>
         <div className="querySummary">
           <span>요일: {weekday}</span>
-          <span>시간: {time}</span>
+          <span>시간: {time === allValue ? time : hourRange(time)}</span>
           <span>정류장: {station}</span>
           <span>날씨: {weather}</span>
         </div>
@@ -514,7 +523,7 @@ function SearchResult({
             <Metric label="표본" value={`${summary.sample_count ?? "0"}건`} />
             <Metric label="평균 잔여좌석" value={seatText(summary.avg_seat)} />
             <Metric label="만차확률" value={summary.full_probability === null ? "-" : `${summary.full_probability}%`} />
-            <Metric label="평균 도착예정" value={etaText(summary.avg_eta_seconds)} />
+            <Metric label="수집 일수" value={`${summary.service_days}일`} />
           </div>
         </section>
       ) : null}
@@ -797,6 +806,47 @@ function Metric({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+function hourRange(value: string) {
+  const hour = Number.parseInt(value, 10);
+  return Number.isFinite(hour) ? `${String(hour).padStart(2, "0")}:00–${String(hour).padStart(2, "0")}:59` : value;
+}
+
+function BoardingOutcome({ summary, route, station, time, weekday }: { summary: Summary; route: string; station: string; time: string; weekday: string }) {
+  const count = Number(summary.sample_count);
+  const limited = count < 30 || Number(summary.service_days) < 3;
+  const probability = Number(summary.full_probability ?? 0);
+  const stale = !!summary.last_collected_at && Date.now() - new Date(summary.last_collected_at).getTime() > 36 * 3600000;
+  const broad = station === allValue || time === allValue;
+  const title = !count ? "아직 판단할 기록이 없어요" : limited ? "판단할 표본이 부족해요" : stale ? "최근 탑승 여건은 확인이 필요해요" : broad ? "선택한 범위의 만차 기록" : probability >= 50 ? "과거 관측의 절반 이상이 만차였어요" : probability > 0 ? "만차가 관측된 적이 있어요" : "수집된 기록에서 만차는 없었어요";
+  return <section className="boardingOutcome" aria-label="탑승 조건 결과">
+    <p className="eyebrow">{route} · {station === allValue ? "전체 정류장" : station}</p>
+    <p className="tripContext">{weekday === allValue ? "모든 요일" : weekday} · {time === allValue ? "모든 시간대" : hourRange(time)}</p>
+    <h2>{title}</h2>
+    <div className="outcomeMetrics"><div><span>과거 만차 관측 비율</span><strong>{count ? `${summary.full_probability}%` : "—"}</strong><small>{count ? `${count.toLocaleString("ko-KR")}건 중 ${Number(summary.full_count).toLocaleString("ko-KR")}건 만차` : "관측 없음"}</small></div><div><span>평균 잔여좌석</span><strong>{seatText(summary.avg_seat)}</strong><small>{summary.service_days}일 동안의 기록</small></div></div>
+    {count > 0 ? <div className="probabilityTrack" role="img" aria-label={`과거 만차 비율 ${probability}%`}><span style={{ width: `${probability}%` }} /></div> : null}
+    <p className="outcomeCaution">{broad ? "전체 정류장·시간을 합친 통계는 특정 탑승 상황과 다를 수 있습니다. " : ""}실시간 좌석이나 탑승 보장 확률이 아닙니다.</p>
+    <DataCoverage summary={summary} />
+  </section>;
+}
+
+function NearbyTimes({ rows, selectedTime }: { rows: GroupRow[]; selectedTime: string }) {
+  const hour = Number.parseInt(selectedTime, 10);
+  const hours = Array.from({ length: 5 }, (_, index) => hour + index - 2).filter((value) => value >= 0 && value <= 23);
+  return <section className="nearbyTimes" aria-label="앞뒤 시간대 비교"><h3>같은 정류장, 앞뒤 시간대</h3><div className="hourComparison">
+    {hours.map((value) => {
+      const row = rows.find((item) => Number.parseInt(item.label, 10) === value);
+      const limited = !row || Number(row.sample_count) < 30 || Number(row.service_days) < 3;
+      return <div key={value} className={`hourColumn ${value === hour ? "selectedHour" : ""}`}>
+        <span>{String(value).padStart(2, "0")}시</span>
+        <small className="comparisonLabel">{value === hour ? "선택 시간" : " "}</small>
+        <strong>{row ? `${row.full_probability}%` : "—"}</strong>
+        <small>{row ? `${row.service_days}일 · ${row.sample_count}건` : "기록 없음"}</small>
+        <small>{row ? limited ? "표본 부족" : "만차 관측 비율" : "비교 불가"}</small>
+      </div>;
+    })}
+  </div><p className="outcomeCaution">시간대만 바꾸고 요일·날씨·조회 기간은 같은 조건으로 비교합니다.</p></section>;
 }
 
 function rowToCells(row: GroupRow) {

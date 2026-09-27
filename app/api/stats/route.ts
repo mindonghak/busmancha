@@ -4,6 +4,7 @@ import { query } from "@/lib/db";
 type SummaryRow = {
   sample_count: string;
   service_days: string;
+  full_count: string;
   avg_seat: string | null;
   min_seat: number | null;
   max_seat: number | null;
@@ -16,6 +17,7 @@ type SummaryRow = {
 type GroupRow = {
   label: string;
   sample_count: string;
+  service_days: string;
   avg_seat: string | null;
   min_seat: number | null;
   full_probability: string | null;
@@ -124,6 +126,7 @@ function buildWhere(params: URLSearchParams, skip: string | null = null) {
     }
   }
   if (skip !== "station" && station && station !== "전체") add("station_name", station);
+  if (params.has("stationSeq")) add("station_seq", params.get("stationSeq")!);
   if (skip !== "weather" && weather && weather !== "전체") {
     if (weather === "강수없음" || weather === "비" || weather === "눈") {
       add("weather_condition", weather);
@@ -178,6 +181,7 @@ async function filteredGroupedStats(
     select
       ${labelSql} as label,
       count(*)::text as sample_count,
+      count(distinct service_date)::text as service_days,
       round(avg(remain_seat)::numeric, 1)::text as avg_seat,
       min(remain_seat)::int as min_seat,
       round(avg(case when remain_seat <= 0 then 1.0 else 0.0 end)::numeric * 100, 1)::text as full_probability
@@ -274,6 +278,9 @@ export async function GET(request: NextRequest) {
   if (params.has("days") && !["7", "30", "90"].includes(params.get("days")!)) {
     return NextResponse.json({ error: "조회 기간이 올바르지 않습니다." }, { status: 400 });
   }
+  if (params.has("stationSeq") && !/^\d{1,3}$/.test(params.get("stationSeq")!)) {
+    return NextResponse.json({ error: "정류장 순서가 올바르지 않습니다." }, { status: 400 });
+  }
 
   try {
     const { where, values } = buildWhere(params);
@@ -283,6 +290,7 @@ export async function GET(request: NextRequest) {
       select
         count(*)::text as sample_count,
         count(distinct service_date)::text as service_days,
+        count(*) filter (where remain_seat = 0)::text as full_count,
         round(avg(remain_seat)::numeric, 1)::text as avg_seat,
         min(remain_seat)::int as min_seat,
         max(remain_seat)::int as max_seat,
@@ -345,7 +353,14 @@ export async function GET(request: NextRequest) {
       hotspotStats(params),
     ]);
 
+    const comparisonParams = new URLSearchParams(params);
+    comparisonParams.delete("time");
+    const nearbyTimes = params.has("time") && (params.has("stationSeq") || params.has("station"))
+      ? await filteredGroupedStats("lpad(split_part(time_hhmm, ':', 1), 2, '0') || '시'", comparisonParams, "min(split_part(time_hhmm, ':', 1)::int)")
+      : [];
+
     return NextResponse.json({
+      nearbyTimes,
       summary: summary.rows[0],
       byRoute,
       byStation,

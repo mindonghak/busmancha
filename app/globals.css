@@ -674,3 +674,36 @@ tr:last-child td {
     font-size: 36px;
   }
 }
+
+.extraFilters { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 18px; }
+.extraFilters summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+.boardingOutcome { padding: 8px 0 22px; border-bottom: 1px solid var(--line); margin-bottom: 24px; }
+.boardingOutcome h2 { font-size: 26px; overflow-wrap: anywhere; }
+.tripContext { font-size: 14px; color: var(--muted); }
+.outcomeMetrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin: 26px 0 18px; }
+.outcomeMetrics span, .outcomeMetrics small { display: block; color: var(--muted); font-size: 13px; }
+.outcomeMetrics strong { display: block; font-size: 36px; margin: 10px 0; color: var(--ink); }
+.probabilityTrack { height: 10px; background: #dfebe7; overflow: hidden; }
+.probabilityTrack span { display: block; height: 100%; background: #b84d42; }
+.outcomeCaution { font-size: 12px; color: var(--muted); line-height: 1.65; margin: 12px 0; }
+.boardingOutcome .coverage { margin: 14px 0 0; }
+.nearbyTimes { margin-bottom: 26px; }
+.nearbyTimes h3 { font-size: 18px; }
+.hourComparison { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-bottom: 1px solid var(--line); }
+.hourColumn { padding: 14px 6px; text-align: center; border-top: 3px solid transparent; }
+.hourColumn span, .hourColumn strong, .hourColumn small { display: block; }
+.hourColumn span { font-size: 13px; }
+.comparisonLabel { min-height: 18px; }
+.hourColumn strong { font-size: 20px; margin: 12px 0; }
+.hourColumn small { font-size: 11px; color: var(--muted); line-height: 1.6; }
+.selectedHour { border-top-color: var(--blue); background: #eaf2f8; }
+.searchPlaceholder { padding: 30px 4px; border-bottom: 1px solid var(--line); }
+.placeholderMetrics { display: flex; gap: 40px; color: var(--muted); margin-top: 32px; }
+.placeholderMetrics strong { display: block; font-size: 32px; margin-top: 16px; }
+@media (max-width: 680px) {
+  .mainTabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .boardingOutcome h2 { font-size: 22px; }
+  .outcomeMetrics strong { font-size: 30px; }
+  .hourColumn strong { font-size: 17px; }
+  .filterPanel h2 { font-size: 21px; }
+}
