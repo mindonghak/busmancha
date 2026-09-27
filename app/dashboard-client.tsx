@@ -19,6 +19,7 @@ type OptionsResponse = {
 
 type Summary = {
   sample_count: string;
+  service_days: string;
   avg_seat: string | null;
   min_seat: number | null;
   max_seat: number | null;
@@ -87,6 +88,8 @@ export default function DashboardClient() {
   const [time, setTime] = useState(allValue);
   const [station, setStation] = useState(allValue);
   const [weather, setWeather] = useState(allValue);
+  const [days, setDays] = useState("");
+  const [searchConditions, setSearchConditions] = useState({ route: "", weekday: allValue, time: allValue, station: allValue, weather: allValue });
   const [analysisRoute, setAnalysisRoute] = useState("");
   const [analysisResultRoute, setAnalysisResultRoute] = useState("");
   const [crowdingRoute, setCrowdingRoute] = useState("");
@@ -110,6 +113,7 @@ export default function DashboardClient() {
     const params = new URLSearchParams();
     if (!route) throw new Error("버스번호를 선택해 주세요.");
     params.set("route", route);
+    if (days) params.set("days", days);
     if (weekday !== allValue) params.set("weekday", weekday);
     if (time !== allValue) params.set("time", time);
     if (station !== allValue) params.set("station", station);
@@ -117,7 +121,7 @@ export default function DashboardClient() {
 
     const body = await fetchJson<StatsResponse>(`/api/stats?${params.toString()}`);
     setSearchStats(body);
-    setActiveTab("search");
+    setSearchConditions({ route, weekday, time, station, weather });
     trackEvent("search_submit", {
       tab: "search",
       route_name: route,
@@ -134,6 +138,7 @@ export default function DashboardClient() {
     setLoading(true);
     setError(null);
     const params = new URLSearchParams({ route: nextRoute });
+    if (days) params.set("days", days);
     return fetchJson<StatsResponse>(`/api/stats?${params.toString()}`);
   };
 
@@ -147,8 +152,6 @@ export default function DashboardClient() {
         if (ignore) return;
 
         setOptions(body);
-        const firstRoute = body.routes?.[0] ?? "";
-        setRoute(firstRoute);
         trackEvent("page_view", { tab: "search" });
         if (!ignore) {
           setAnalysisStats(null);
@@ -210,6 +213,7 @@ export default function DashboardClient() {
       setLoading(true);
       setError(null);
       const params = new URLSearchParams({ route: crowdingRoute });
+      if (days) params.set("days", days);
       if (crowdingDayType !== allValue) params.set("dayType", crowdingDayType);
       const body = await fetchJson<StatsResponse>(`/api/stats?${params.toString()}`);
       setCrowdingStats(body);
@@ -262,7 +266,8 @@ export default function DashboardClient() {
               </div>
             </div>
             <form onSubmit={submit}>
-              <Filter label="버스번호" options={options?.routes ?? []} value={route} onChange={setRoute} />
+              <Filter label="버스번호" options={["", ...(options?.routes ?? [])]} value={route} onChange={setRoute} />
+              <PeriodFilter value={days} onChange={setDays} />
               <Filter label="요일" options={[allValue, ...(options?.weekdays ?? [])]} value={weekday} onChange={setWeekday} />
               <Filter label="시간" options={[allValue, ...(options?.times ?? [])]} value={time} onChange={setTime} />
               <Filter
@@ -272,7 +277,7 @@ export default function DashboardClient() {
                 onChange={setStation}
               />
               <Filter label="날씨" options={[allValue, ...(options?.weatherConditions ?? [])]} value={weather} onChange={setWeather} />
-              <button className="primaryButton" type="submit" disabled={loading}>
+              <button className="primaryButton" type="submit" disabled={loading || !route}>
                 {loading ? "불러오는 중" : "검색"}
               </button>
             </form>
@@ -292,11 +297,7 @@ export default function DashboardClient() {
                 byWeekday={searchStats.byWeekday}
                 byWeather={searchStats.byWeather}
                 byStation={searchStats.filteredByStation}
-                route={route}
-                weekday={weekday}
-                time={time}
-                station={station}
-                weather={weather}
+                {...searchConditions}
               />
             ) : null}
           </section>
@@ -311,6 +312,7 @@ export default function DashboardClient() {
               <h2>버스별 분석</h2>
             </div>
             <form className="analysisForm" onSubmit={submitAnalysis}>
+              <PeriodFilter value={days} onChange={setDays} />
               <label>
                 <span>버스번호</span>
                 <select value={analysisRoute} onChange={(event) => setAnalysisRoute(event.target.value)}>
@@ -346,6 +348,7 @@ export default function DashboardClient() {
               <h2>버스별 만차 시간과 정류장</h2>
             </div>
             <form className="analysisForm crowdingForm" onSubmit={submitCrowding}>
+              <PeriodFilter value={days} onChange={setDays} />
               <label>
                 <span>버스번호</span>
                 <select value={crowdingRoute} onChange={(event) => setCrowdingRoute(event.target.value)}>
@@ -370,7 +373,7 @@ export default function DashboardClient() {
           </section>
 
           {!crowdingStats && !loading ? <div className="emptyState">버스번호를 선택한 뒤 만차 조회 버튼을 누르면 결과가 표시됩니다.</div> : null}
-          {crowdingStats ? <CrowdingView route={crowdingResultRoute} dayType={crowdingResultDayType} rows={crowdingStats.hotspots} /> : null}
+          {crowdingStats ? <><DataCoverage summary={crowdingStats.summary} /><CrowdingView route={crowdingResultRoute} dayType={crowdingResultDayType} rows={crowdingStats.hotspots} /></> : null}
         </section>
       ) : null}
     </main>
@@ -378,10 +381,10 @@ export default function DashboardClient() {
 }
 
 async function fetchJson<T>(url: string) {
-  const response = await fetch(url, { cache: "no-store" });
+  const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(30000) });
   const body = await response.json();
   if (!response.ok) {
-    throw new Error(body.error ?? "데이터를 불러오지 못했습니다.");
+    throw new Error(response.status >= 500 ? "데이터에 연결하지 못했습니다. 잠시 후 다시 조회해 주세요." : (body.error ?? "데이터를 불러오지 못했습니다."));
   }
   return body as T;
 }
@@ -427,7 +430,7 @@ function Filter({
       <span>{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => (
-          <option key={option}>{option}</option>
+          <option key={option} value={option}>{option || "선택"}</option>
         ))}
       </select>
     </label>
@@ -475,6 +478,7 @@ function SearchResult({
 
   return (
     <>
+      <DataCoverage summary={summary} />
       <section className="panel noTopPadding">
         <div className="sectionHead">
           <div>
@@ -509,7 +513,7 @@ function SearchResult({
           <div className="summaryStrip">
             <Metric label="표본" value={`${summary.sample_count ?? "0"}건`} />
             <Metric label="평균 잔여좌석" value={seatText(summary.avg_seat)} />
-            <Metric label="만차확률" value={`${summary.full_probability ?? "0"}%`} />
+            <Metric label="만차확률" value={summary.full_probability === null ? "-" : `${summary.full_probability}%`} />
             <Metric label="평균 도착예정" value={etaText(summary.avg_eta_seconds)} />
           </div>
         </section>
@@ -566,6 +570,7 @@ function AnalysisView({
 
   return (
     <section className="analysisResults">
+      <DataCoverage summary={stats.summary} />
       <nav className="subTabs" aria-label="분석 종류">
         {analysisTabs.map((tab) => (
           <button className={mode === tab.id ? "active" : ""} key={tab.id} onClick={() => onModeChange(tab.id)}>
@@ -611,7 +616,7 @@ function AnalysisView({
           {weatherMode === "temperature" ? (
             <AnalysisTable
               title={`${route} 온도별 보기`}
-              description="강남 기준 그날의 최고기온을 3도 간격으로 나눠 평균 잔여좌석과 만차확률을 비교합니다."
+              description="강남에서 수집된 기온 중 일별 최댓값 기준입니다. 수집 공백이 있어 실제 일 최고기온과 다를 수 있습니다."
               columns={["온도", "평균 잔여좌석", "최소", "만차확률", "표본"]}
               rows={stats.byTemperature.map(rowToCells)}
             />
@@ -770,6 +775,7 @@ function AnalysisTable({
             </tr>
           </thead>
           <tbody>
+            {!rows.length ? <tr><td colSpan={columns.length}>조건에 맞는 표본이 없습니다.</td></tr> : null}
             {rows.map((row) => (
               <tr key={row.join("-")}>
                 {row.map((cell, index) => (
@@ -822,9 +828,30 @@ function dateRange(start: string | null, end: string | null) {
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function PeriodFilter({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return <label><span>조회 기간</span><select value={value} onChange={(event) => onChange(event.target.value)}>
+    <option value="">전체 기간</option><option value="7">최근 7일</option><option value="30">최근 30일</option><option value="90">최근 90일</option>
+  </select></label>;
+}
+
+function DataCoverage({ summary }: { summary: Summary }) {
+  const count = Number(summary.sample_count);
+  const days = Number(summary.service_days);
+  const stale = summary.last_collected_at && Date.now() - new Date(summary.last_collected_at).getTime() > 36 * 60 * 60 * 1000;
+  return <div className="coverage" role="status">
+    <span>실제 수집 {days}일 · 관측 {count.toLocaleString("ko-KR")}건</span>
+    <span>{dateRange(summary.first_collected_at, summary.last_collected_at)}</span>
+    {count > 0 && (days < 3 || count < 30) ? <strong>표본 부족 · 장기적인 패턴으로 판단하기 어렵습니다.</strong> : null}
+    {stale ? <strong>최근 36시간 내 관측이 없는 결과입니다.</strong> : null}
+    <small>만차확률은 수집된 좌석 관측 중 0석의 비율입니다. 같은 차량의 반복 관측이 포함될 수 있습니다.</small>
+  </div>;
 }

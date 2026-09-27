@@ -151,7 +151,8 @@ h2 {
 }
 
 select {
-  appearance: none;
+  appearance: auto;
+  min-width: 0;
   background: #f8fafb;
   border: 1px solid var(--line);
   color: var(--ink);
@@ -185,6 +186,19 @@ select {
 .results {
   min-width: 0;
 }
+
+.coverage {
+  display: grid;
+  gap: 6px;
+  border-left: 3px solid var(--blue);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.coverage strong { color: #984510; }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
 
 .tabs {
   background: #e7eef1;
@@ -270,11 +284,11 @@ select {
   align-items: end;
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(0, 1fr) 120px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .crowdingForm {
-  grid-template-columns: minmax(0, 1fr) 120px 120px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .analysisControls label,

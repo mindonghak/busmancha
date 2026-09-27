@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 
 type SummaryRow = {
   sample_count: string;
+  service_days: string;
   avg_seat: string | null;
   min_seat: number | null;
   max_seat: number | null;
@@ -81,6 +82,11 @@ function buildWhere(params: URLSearchParams, skip: string | null = null) {
     "station_name not like '%(미정차)%'",
   ];
   const values: unknown[] = [];
+  const days = Number(params.get("days"));
+  if ([7, 30, 90].includes(days)) {
+    values.push(days - 1);
+    clauses.push(`service_date >= (current_timestamp at time zone 'Asia/Seoul')::date - $${values.length}::int`);
+  }
 
   const add = (column: string, value: string) => {
     values.push(value);
@@ -137,7 +143,7 @@ async function groupedStats(
   orderSql = "label",
   minSampleCount = 0
 ) {
-  const { where, values } = buildWhere(params, skip);
+  const { where, values } = buildWhere(params);
   const result = await query<GroupRow>(
     `
     ${baseCte}
@@ -188,7 +194,7 @@ async function filteredGroupedStats(
 }
 
 async function weatherGroupedStats(params: URLSearchParams) {
-  const { where, values } = buildWhere(params, "weather");
+  const { where, values } = buildWhere(params);
   const result = await query<GroupRow>(
     `
     ${baseCte}
@@ -215,7 +221,7 @@ async function temperatureGroupedStats(params: URLSearchParams) {
     `
     ${baseCte}
     select
-      (floor(max_temperature / 3) * 3)::int::text || '~' || ((floor(max_temperature / 3) * 3)::int + 2)::text || '도' as label,
+      (floor(max_temperature / 3) * 3)::int::text || '°C 이상 ' || ((floor(max_temperature / 3) * 3)::int + 3)::text || '°C 미만' as label,
       count(*)::text as sample_count,
       round(avg(remain_seat)::numeric, 1)::text as avg_seat,
       min(remain_seat)::int as min_seat,
@@ -262,6 +268,12 @@ async function hotspotStats(params: URLSearchParams) {
 
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
+  if (!["6002", "G6009", "M4130", "M4137"].includes(params.get("route") ?? "")) {
+    return NextResponse.json({ error: "버스번호를 선택해 주세요." }, { status: 400 });
+  }
+  if (params.has("days") && !["7", "30", "90"].includes(params.get("days")!)) {
+    return NextResponse.json({ error: "조회 기간이 올바르지 않습니다." }, { status: 400 });
+  }
 
   try {
     const { where, values } = buildWhere(params);
@@ -270,13 +282,14 @@ export async function GET(request: NextRequest) {
       ${baseCte}
       select
         count(*)::text as sample_count,
+        count(distinct service_date)::text as service_days,
         round(avg(remain_seat)::numeric, 1)::text as avg_seat,
         min(remain_seat)::int as min_seat,
         max(remain_seat)::int as max_seat,
         round(avg(case when remain_seat <= 0 then 1.0 else 0.0 end)::numeric * 100, 1)::text as full_probability,
         round(avg(eta_seconds)::numeric, 0)::text as avg_eta_seconds,
-        min(collected_at)::text as first_collected_at,
-        max(collected_at)::text as last_collected_at
+        to_char(min(service_date + time_hhmm::time), 'YYYY-MM-DD"T"HH24:MI:SS') || '+09:00' as first_collected_at,
+        to_char(max(service_date + time_hhmm::time), 'YYYY-MM-DD"T"HH24:MI:SS') || '+09:00' as last_collected_at
       from seat_weather
       ${where}
       `,
@@ -293,7 +306,7 @@ export async function GET(request: NextRequest) {
       filteredByStation,
       hotspots,
     ] = await Promise.all([
-      groupedStats("route_name", params, "route"),
+      Promise.resolve([]),
       groupedStats(
         "station_seq::text || '. ' || station_name",
         params,
