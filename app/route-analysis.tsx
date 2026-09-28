@@ -9,7 +9,7 @@ type Data = { stops: Stop[]; rows: Hour[] };
 export default function RouteAnalysis({ routes }: { routes: string[] }) {
   const [route, setRoute] = useState("");
   const [direction, setDirection] = useState("outbound");
-  const [day, setDay] = useState("평일");
+  const [day, setDay] = useState("전체");
   const [weather, setWeather] = useState("전체");
   const [period, setPeriod] = useState("0");
   const [seq, setSeq] = useState<number | null>(null);
@@ -49,11 +49,8 @@ export default function RouteAnalysis({ routes }: { routes: string[] }) {
   const dates = hours.map(r => r.last_date).sort();
   const last = dates.at(-1);
   return <section className="routeAnalysis">
-    <div className="routeAnalysisFilters">
+    <div className="routePicker">
       <label>버스번호<select aria-label="분석 버스번호" value={route} onChange={e => { setRoute(e.target.value); setSeq(null); setData(null); setStops([]); }}><option value="">선택</option>{routes.map(r => <option key={r}>{r}</option>)}</select></label>
-      <label>요일<select value={day} onChange={e => { setData(null); setDay(e.target.value); }}>{["전체", "평일", "주말"].map(v => <option key={v}>{v}</option>)}</select></label>
-      <label>하루 날씨 · 강남<select value={weather} onChange={e => { setData(null); setWeather(e.target.value); }}>{["전체", "강수없음", "비", "눈"].map(v => <option key={v}>{v}</option>)}</select></label>
-      <label>조회 기간<select value={period} onChange={e => { setData(null); setPeriod(e.target.value); }}><option value="0">전체 기간</option><option value="7">최근 7일</option><option value="30">최근 30일</option><option value="90">최근 90일</option></select></label>
     </div>
     {!route ? <div className="emptyState">분석할 버스를 선택해 주세요.</div> : <div className="routeAnalysisBody">
       <aside className="routeRail">
@@ -62,6 +59,14 @@ export default function RouteAnalysis({ routes }: { routes: string[] }) {
         <ol>{visible.map(s => <li key={s.seq}><button aria-pressed={seq === s.seq} onClick={() => setSeq(s.seq)}><span className="railDot" /><span>{s.name}</span><small>{s.seq}</small></button></li>)}</ol>
       </aside>
       <section className="stationHours" aria-live="polite">
+        <details className="analysisOptionalFilters">
+          <summary>조건 필터 · {day === "전체" ? "모든 요일" : day} · {weather === "전체" ? "모든 날씨" : weather} · {period === "0" ? "전체 기간" : `최근 ${period}일`}</summary>
+          <div className="routeAnalysisFilters">
+            <label>요일<select aria-label="분석 요일" value={day} onChange={e => { setData(null); setDay(e.target.value); }}>{["전체", "평일", "주말"].map(v => <option key={v}>{v}</option>)}</select></label>
+            <label>하루 날씨 · 강남<select aria-label="분석 날씨" value={weather} onChange={e => { setData(null); setWeather(e.target.value); }}>{["전체", "강수없음", "비", "눈"].map(v => <option key={v}>{v}</option>)}</select></label>
+            <label>조회 기간<select aria-label="분석 조회 기간" value={period} onChange={e => { setData(null); setPeriod(e.target.value); }}><option value="0">전체 기간</option><option value="7">최근 7일</option><option value="30">최근 30일</option><option value="90">최근 90일</option></select></label>
+          </div>
+        </details>
         {!selected ? <div className="emptyState">정류장을 선택해 주세요.</div> : <>
           <p className="eyebrow">{route} · {direction === "outbound" ? "서울 방면" : "동탄 방면"} · {day} · {weather === "전체" ? "모든 날씨" : weather}</p>
           <h2>{selected.name}</h2><h3>시간대별 만차 관측 비율</h3>

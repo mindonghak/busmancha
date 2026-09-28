@@ -211,7 +211,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--blue); out
 }
 
 .mainTabs {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .topTabs {
@@ -721,7 +721,7 @@ tr:last-child td {
 .placeholderMetrics { display: flex; gap: 40px; color: var(--muted); margin-top: 32px; }
 .placeholderMetrics strong { display: block; font-size: 32px; margin-top: 16px; }
 @media (max-width: 680px) {
-  .mainTabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mainTabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .boardingOutcome h2 { font-size: 22px; }
   .outcomeMetrics strong { font-size: 30px; }
   .hourColumn strong { font-size: 17px; }
@@ -747,3 +747,10 @@ tr:last-child td {
 .hourChartScroll { overflow-x:auto; max-width:100%; }.hourChart { display:grid; grid-template-columns:42px repeat(24,minmax(30px,1fr)); min-width:830px; padding-top:30px; height:280px; gap:3px; }
 .hourAxis { display:flex; flex-direction:column; justify-content:space-between; padding-bottom:24px; font-size:11px; color:#647077; }.hourColumn { display:grid; grid-template-rows:minmax(0,1fr) 24px; text-align:center; font-size:11px; gap:5px; }.hourPlot { position:relative; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; background:linear-gradient(to top,#e6e9eb 1px,transparent 1px) 0 0/100% 50%; border-bottom:1px solid #aab7bf; }.hourBar { width:75%; background:#b95351; flex-shrink:0; }.hourBar.sparse { background:repeating-linear-gradient(135deg,#b8c1c8 0px,#b8c1c8 4px,#e8edf0 4px,#e8edf0 8px); }.hourValue { position:absolute; top:-24px; font-size:10px; }.hourMissing { color:#849096; margin-bottom:3px; }.hourNote { font-size:12px; line-height:1.7; color:#626e76; margin:14px 0; }.hourWarning { font-size:13px; color:#965019; }.hourTable { border-collapse:collapse; width:100%; min-width:470px; font-size:13px; }.hourTable th,.hourTable td { padding:10px; border-bottom:1px solid #e0e4e6; text-align:left; }.stationHours summary { padding:12px 0; cursor:pointer; }.routeAnalysis button { cursor:pointer; }.routeAnalysis button:focus-visible { outline:2px solid #166bb0; outline-offset:2px; }
 @media(max-width:760px) { .routeAnalysisFilters { grid-template-columns:repeat(2,minmax(0,1fr)); }.routeAnalysisBody { grid-template-columns:minmax(0,1fr); gap:24px; }.routeRail { border-right:0; padding-right:0; border-bottom:1px solid #dce1e3; padding-bottom:16px; }.routeRail ol { max-height:230px; }.stationHours h2 { font-size:20px; } }
+.routePicker { padding:20px 0; border-bottom:1px solid #dce1e3; }
+.routePicker label { display:grid; gap:8px; max-width:320px; font-size:13px; }
+.routePicker select { width:100%; padding:10px; background:white; border:1px solid #bfc9ce; border-radius:6px; }
+.analysisOptionalFilters { margin-bottom:20px; border-bottom:1px solid #dce1e3; }
+.analysisOptionalFilters summary { font-size:13px; line-height:1.7; overflow-wrap:anywhere; }
+.analysisOptionalFilters .routeAnalysisFilters { grid-template-columns:repeat(3,minmax(0,1fr)); border-bottom:0; }
+@media(max-width:600px) { .analysisOptionalFilters .routeAnalysisFilters { grid-template-columns:minmax(0,1fr); } }

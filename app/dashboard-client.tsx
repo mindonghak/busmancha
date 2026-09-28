@@ -64,7 +64,7 @@ type StatsResponse = {
   hotspots: HotspotRow[];
 };
 
-type MainTab = "search" | "analysis" | "crowding";
+type MainTab = "search" | "analysis";
 type AnalysisMode = "station" | "time" | "weekday" | "weather";
 type WeatherAnalysisMode = "precipitation" | "temperature";
 type SearchResultMode = "summary" | "station" | "time" | "weekday" | "weather";
@@ -73,8 +73,7 @@ const allValue = "전체";
 const dayTypeOptions = ["전체", "평일", "주말"];
 const mainTabs: { id: MainTab; label: string }[] = [
   { id: "search", label: "내 탑승 조건" },
-  { id: "analysis", label: "노선별 비교" },
-  { id: "crowding", label: "혼잡 구간" },
+  { id: "analysis", label: "노선 혼잡도" },
 ];
 const analysisTabs: { id: AnalysisMode; label: string }[] = [
   { id: "station", label: "정류장별" },
@@ -86,7 +85,6 @@ const analysisTabs: { id: AnalysisMode; label: string }[] = [
 export default function DashboardClient() {
   const [options, setOptions] = useState<OptionsResponse | null>(null);
   const [searchStats, setSearchStats] = useState<StatsResponse | null>(null);
-  const [crowdingStats, setCrowdingStats] = useState<StatsResponse | null>(null);
   const [route, setRoute] = useState("");
   const [weekday, setWeekday] = useState(allValue);
   const [time, setTime] = useState(allValue);
@@ -94,10 +92,6 @@ export default function DashboardClient() {
   const [weather, setWeather] = useState(allValue);
   const [days, setDays] = useState("");
   const [searchConditions, setSearchConditions] = useState({ route: "", weekday: allValue, time: allValue, station: allValue, weather: allValue });
-  const [crowdingRoute, setCrowdingRoute] = useState("");
-  const [crowdingDayType, setCrowdingDayType] = useState(allValue);
-  const [crowdingResultRoute, setCrowdingResultRoute] = useState("");
-  const [crowdingResultDayType, setCrowdingResultDayType] = useState(allValue);
   const [activeTab, setActiveTab] = useState<MainTab>("search");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -148,7 +142,6 @@ export default function DashboardClient() {
         setOptions(body);
         trackEvent("page_view", { tab: "search" });
         if (!ignore) {
-          setCrowdingStats(null);
         }
       } catch (err) {
         if (!ignore) setError(err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다.");
@@ -173,32 +166,6 @@ export default function DashboardClient() {
     event.preventDefault();
     try {
       await fetchSearchStats();
-    } catch (err) {
-      setLoading(false);
-      setError(err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다.");
-    }
-  };
-
-  const submitCrowding = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!crowdingRoute) return;
-
-    try {
-      setLoading(true);
-      setError(null);
-      const params = new URLSearchParams({ route: crowdingRoute });
-      if (days) params.set("days", days);
-      if (crowdingDayType !== allValue) params.set("dayType", crowdingDayType);
-      const body = await fetchJson<StatsResponse>(`/api/stats?${params.toString()}`);
-      setCrowdingStats(body);
-      setCrowdingResultRoute(crowdingRoute);
-      setCrowdingResultDayType(crowdingDayType);
-      trackEvent("crowding_submit", {
-        tab: "crowding",
-        route_name: crowdingRoute,
-        day_type: crowdingDayType,
-      });
-      setLoading(false);
     } catch (err) {
       setLoading(false);
       setError(err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다.");
@@ -281,42 +248,6 @@ export default function DashboardClient() {
 
       {activeTab === "analysis" ? <RouteAnalysis routes={options?.routes ?? []} /> : null}
 
-      {activeTab === "crowding" ? (
-        <section className="analysisWorkspace">
-          <section className="panel analysisControls">
-            <div>
-              <p className="eyebrow">만차지도</p>
-              <h2>버스별 만차 시간과 정류장</h2>
-            </div>
-            <form className="analysisForm crowdingForm" onSubmit={submitCrowding}>
-              <PeriodFilter value={days} onChange={setDays} />
-              <label>
-                <span>버스번호</span>
-                <select value={crowdingRoute} onChange={(event) => setCrowdingRoute(event.target.value)}>
-                  <option value="">선택</option>
-                  {(options?.routes ?? []).map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>구분</span>
-                <select value={crowdingDayType} onChange={(event) => setCrowdingDayType(event.target.value)}>
-                  {dayTypeOptions.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
-              <button className="primaryButton inlineButton" type="submit" disabled={loading || !crowdingRoute}>
-                {loading ? "불러오는 중" : "만차 조회"}
-              </button>
-            </form>
-          </section>
-
-          {!crowdingStats && !loading ? <div className="emptyState">버스번호를 선택한 뒤 만차 조회 버튼을 누르면 결과가 표시됩니다.</div> : null}
-          {crowdingStats ? <><DataCoverage summary={crowdingStats.summary} /><CrowdingView route={crowdingResultRoute} dayType={crowdingResultDayType} rows={crowdingStats.hotspots} /></> : null}
-        </section>
-      ) : null}
     </main>
   );
 }
@@ -637,80 +568,6 @@ function RouteProgress({ profile }: { profile: NonNullable<StatsResponse["routeP
     })}</ol>
     <p className="outcomeCaution">회색 정류장은 여유 좌석이 있다는 뜻이 아닙니다. 회차 전후를 구분했으며, API의 현재 정류장 순서 기준입니다.</p>
   </section>;
-}
-
-function CrowdingView({ route, dayType, rows }: { route: string; dayType: string; rows: HotspotRow[] }) {
-  const topRows = rows.slice(0, 6);
-  const label = dayType === allValue ? "전체" : dayType;
-
-  if (!rows.length) {
-    return <div className="emptyState">{label} 기준으로 표본 10건 이상인 만차 구간이 아직 없습니다.</div>;
-  }
-
-  return (
-    <section className="panel crowdingPanel">
-      <div className="sectionHead">
-        <div>
-          <p className="eyebrow">만차 우선순위</p>
-          <h2>{route} {label} 기준으로 먼저 봐야 할 정류장과 시간대</h2>
-        </div>
-        <p>표본 10건 이상인 정류장·시간대 조합을 만차확률 높은 순서로 정렬했습니다.</p>
-      </div>
-
-      <div className="hotspotGrid">
-        {topRows.map((row, index) => (
-          <article className={`hotspotCard ${riskClass(row.full_probability)}`} key={`${row.station_label}-${row.time_label}`}>
-            <span className="rank">#{index + 1}</span>
-            <strong>{row.station_label}</strong>
-            <div className="hotspotTime">{row.time_label}</div>
-            <dl>
-              <div>
-                <dt>만차확률</dt>
-                <dd>{row.full_probability ?? "0"}%</dd>
-              </div>
-              <div>
-                <dt>평균</dt>
-                <dd>{seatText(row.avg_seat)}</dd>
-              </div>
-              <div>
-                <dt>표본</dt>
-                <dd>{row.sample_count}건</dd>
-              </div>
-            </dl>
-          </article>
-        ))}
-      </div>
-
-      <div className="tableWrap crowdingTable">
-        <table>
-          <thead>
-            <tr>
-              <th>정류장</th>
-              <th>시간대</th>
-              <th>만차확률</th>
-              <th>평균 잔여좌석</th>
-              <th>최소</th>
-              <th>표본</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={`${row.station_label}-${row.time_label}`}>
-                <td>{row.station_label}</td>
-                <td>{row.time_label}</td>
-                <td>
-                  <span className={`riskPill ${riskClass(row.full_probability)}`}>{row.full_probability ?? "0"}%</span>
-                </td>
-                <td>{seatText(row.avg_seat)}</td>
-                <td>{row.min_seat ?? "-"}석</td>
-                <td>{row.sample_count}건</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
 }
 
 function AnalysisTable({
