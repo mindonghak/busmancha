@@ -198,28 +198,46 @@ def ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, c
         conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
 
 
+_station_cache: dict[str, tuple[float, list[dict[str, str]]]] = {}
+
+
 def get_route_stations(route_id: str) -> list[dict[str, str]]:
+    cached = _station_cache.get(route_id)
+    if cached and time.monotonic() - cached[0] < 86400:
+        return cached[1]
     payload = fetch_text(
         GYEONGGI_ROUTE_STATIONS_URL,
         {"serviceKey": service_key(), "routeId": route_id, "format": "xml"},
     )
-    return xml_items(payload, "busRouteStationList")
+    stations = xml_items(payload, "busRouteStationList")
+    if stations:
+        _station_cache[route_id] = (time.monotonic(), stations)
+    return stations
+
+
+_arrival_cache: dict[str, tuple[float, list[dict[str, str]]]] = {}
 
 
 def get_arrival(route_id: str, station_id: str, station_seq: str, private: bool = False) -> dict[str, str] | None:
-    reserve(DB_PATH, LOG_PATH, private)
-    payload = fetch_text(
-        GYEONGGI_ARRIVAL_URL,
-        {
-            "serviceKey": service_key(),
-            "routeId": route_id,
-            "stationId": station_id,
-            "staOrder": station_seq,
-            "format": "xml",
-        },
-    )
-    rows = xml_items(payload, "busArrivalItem")
-    return rows[0] if rows else None
+    cached = _arrival_cache.get(station_id)
+    if cached and time.monotonic() - cached[0] < 120:
+        rows = cached[1]
+    else:
+        reserve(DB_PATH, LOG_PATH, private)
+        payload = fetch_text(
+            GYEONGGI_ARRIVAL_URL.replace("getBusArrivalItemv2", "getBusArrivalListv2"),
+            {"serviceKey": service_key(), "stationId": station_id, "format": "xml"},
+        )
+        root = ET.fromstring(payload)
+        code = root.findtext(".//resultCode")
+        if code not in ("0", "4"):
+            raise RuntimeError("quota exceeded" if code == "22" else f"arrival API error code={code}")
+        rows = xml_items(payload, "busArrivalList")
+        _arrival_cache[station_id] = (time.monotonic(), rows)
+    # A station can occur twice on a loop; never match solely by route ID.
+    matches = [r for r in rows if r.get("routeId") == route_id
+               and r.get("stationId") == station_id and r.get("staOrder") == str(station_seq)]
+    return matches[0] if len(matches) == 1 else None
 
 
 def should_stop_for_quota(exc: Exception) -> bool:
@@ -450,6 +468,9 @@ def rows_from_arrival(collected_at: datetime, station: dict[str, str], arrival: 
 
         remain_seat = parse_int(arrival.get(f"remainSeatCnt{order}"))
         eta_seconds = parse_int(arrival.get(f"predictTimeSec{order}"))
+        if eta_seconds is None:
+            eta_minutes = parse_int(arrival.get(f"predictTime{order}"))
+            eta_seconds = eta_minutes * 60 if eta_minutes is not None and eta_minutes >= 0 else None
         is_full = None if remain_seat is None else int(remain_seat <= 0)
 
         rows.append(
@@ -543,6 +564,7 @@ def collect_once(
     collect_weather_enabled: bool = True,
 ) -> int:
     collected_at = datetime.now()
+    _arrival_cache.clear()
     total_rows = 0
     selected_routes = ROUTES
     if route_names:

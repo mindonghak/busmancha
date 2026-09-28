@@ -727,3 +727,23 @@ tr:last-child td {
   .hourColumn strong { font-size: 17px; }
   .filterPanel h2 { font-size: 21px; }
 }
+.routeAnalysisFilters { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; padding:20px 0; border-bottom:1px solid #dce1e3; }
+.routeAnalysisFilters label { display:grid; gap:8px; font-size:13px; }
+.routeAnalysisFilters select { width:100%; padding:10px; background:white; border:1px solid #bfc9ce; border-radius:6px; }
+.routeAnalysisBody { display:grid; grid-template-columns:290px minmax(0,1fr); gap:32px; padding-top:24px; }
+.routeRail { min-width:0; border-right:1px solid #dce1e3; padding-right:20px; }
+.railDirections { display:flex; gap:8px; margin:16px 0; }
+.railDirections button { flex:1; padding:10px 4px; border:0; border-bottom:3px solid transparent; background:transparent; }
+.railDirections button[aria-pressed=true] { border-color:#157c71; color:#12675e; font-weight:700; }
+.routeRail ol { list-style:none; margin:0; padding:0; max-height:560px; overflow:auto; }
+.routeRail li { position:relative; }
+.routeRail li::before { content:''; position:absolute; left:17px; top:0; bottom:0; width:2px; background:#a9babf; }
+.routeRail li:first-child::before { top:50%; }.routeRail li:last-child::before { bottom:50%; }
+.routeRail li button { position:relative; display:grid; grid-template-columns:16px minmax(0,1fr) 24px; align-items:center; gap:8px; text-align:left; width:100%; min-height:48px; border:0; background:transparent; padding:10px; border-radius:4px; font-size:13px; }
+.routeRail li button[aria-pressed=true] { background:#e1f2ed; font-weight:700; color:#125e56; }
+.railDot { width:12px; height:12px; border:2px solid #66878a; border-radius:50%; background:white; margin-left:2px; }
+.routeRail button[aria-pressed=true] .railDot { background:#157c71; border-color:#157c71; }
+.routeRail small { color:#68777c; text-align:right; }.stationHours { min-width:0; }.stationHours h2 { font-size:23px; overflow-wrap:anywhere; }.stationHours h3 { font-size:16px; margin:20px 0; }
+.hourChartScroll { overflow-x:auto; max-width:100%; }.hourChart { display:grid; grid-template-columns:42px repeat(24,minmax(30px,1fr)); min-width:830px; padding-top:30px; height:280px; gap:3px; }
+.hourAxis { display:flex; flex-direction:column; justify-content:space-between; padding-bottom:24px; font-size:11px; color:#647077; }.hourColumn { display:grid; grid-template-rows:minmax(0,1fr) 24px; text-align:center; font-size:11px; gap:5px; }.hourPlot { position:relative; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; background:linear-gradient(to top,#e6e9eb 1px,transparent 1px) 0 0/100% 50%; border-bottom:1px solid #aab7bf; }.hourBar { width:75%; background:#b95351; flex-shrink:0; }.hourBar.sparse { background:repeating-linear-gradient(135deg,#b8c1c8 0px,#b8c1c8 4px,#e8edf0 4px,#e8edf0 8px); }.hourValue { position:absolute; top:-24px; font-size:10px; }.hourMissing { color:#849096; margin-bottom:3px; }.hourNote { font-size:12px; line-height:1.7; color:#626e76; margin:14px 0; }.hourWarning { font-size:13px; color:#965019; }.hourTable { border-collapse:collapse; width:100%; min-width:470px; font-size:13px; }.hourTable th,.hourTable td { padding:10px; border-bottom:1px solid #e0e4e6; text-align:left; }.stationHours summary { padding:12px 0; cursor:pointer; }.routeAnalysis button { cursor:pointer; }.routeAnalysis button:focus-visible { outline:2px solid #166bb0; outline-offset:2px; }
+@media(max-width:760px) { .routeAnalysisFilters { grid-template-columns:repeat(2,minmax(0,1fr)); }.routeAnalysisBody { grid-template-columns:minmax(0,1fr); gap:24px; }.routeRail { border-right:0; padding-right:0; border-bottom:1px solid #dce1e3; padding-bottom:16px; }.routeRail ol { max-height:230px; }.stationHours h2 { font-size:20px; } }

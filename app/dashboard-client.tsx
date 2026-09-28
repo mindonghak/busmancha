@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import RouteAnalysis from "./route-analysis";
 
 type StationOption = {
   route_name: string;
@@ -85,7 +86,6 @@ const analysisTabs: { id: AnalysisMode; label: string }[] = [
 export default function DashboardClient() {
   const [options, setOptions] = useState<OptionsResponse | null>(null);
   const [searchStats, setSearchStats] = useState<StatsResponse | null>(null);
-  const [analysisStats, setAnalysisStats] = useState<StatsResponse | null>(null);
   const [crowdingStats, setCrowdingStats] = useState<StatsResponse | null>(null);
   const [route, setRoute] = useState("");
   const [weekday, setWeekday] = useState(allValue);
@@ -94,18 +94,11 @@ export default function DashboardClient() {
   const [weather, setWeather] = useState(allValue);
   const [days, setDays] = useState("");
   const [searchConditions, setSearchConditions] = useState({ route: "", weekday: allValue, time: allValue, station: allValue, weather: allValue });
-  const [analysisRoute, setAnalysisRoute] = useState("");
-  const [analysisDirection, setAnalysisDirection] = useState("outbound");
-  const [analysisDayType, setAnalysisDayType] = useState("평일");
-  const [analysisTime, setAnalysisTime] = useState(allValue);
-  const [analysisContext, setAnalysisContext] = useState("");
-  const [analysisResultRoute, setAnalysisResultRoute] = useState("");
   const [crowdingRoute, setCrowdingRoute] = useState("");
   const [crowdingDayType, setCrowdingDayType] = useState(allValue);
   const [crowdingResultRoute, setCrowdingResultRoute] = useState("");
   const [crowdingResultDayType, setCrowdingResultDayType] = useState(allValue);
   const [activeTab, setActiveTab] = useState<MainTab>("search");
-  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("station");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -143,21 +136,6 @@ export default function DashboardClient() {
     setLoading(false);
   };
 
-  const fetchAnalysisStats = async (nextRoute: string) => {
-    if (!nextRoute) return null;
-    setLoading(true);
-    setError(null);
-    const params = new URLSearchParams({ route: nextRoute });
-    params.set("direction", analysisDirection);
-    if (analysisDayType !== allValue) params.set("dayType", analysisDayType);
-    if (analysisTime !== allValue) {
-      params.set("time", analysisTime);
-      params.set("profile", "1");
-    }
-    if (days) params.set("days", days);
-    return fetchJson<StatsResponse>(`/api/stats?${params.toString()}`);
-  };
-
   useEffect(() => {
     let ignore = false;
 
@@ -170,7 +148,6 @@ export default function DashboardClient() {
         setOptions(body);
         trackEvent("page_view", { tab: "search" });
         if (!ignore) {
-          setAnalysisStats(null);
           setCrowdingStats(null);
         }
       } catch (err) {
@@ -196,26 +173,6 @@ export default function DashboardClient() {
     event.preventDefault();
     try {
       await fetchSearchStats();
-    } catch (err) {
-      setLoading(false);
-      setError(err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다.");
-    }
-  };
-
-  const submitAnalysis = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    try {
-      const body = await fetchAnalysisStats(analysisRoute);
-      if (body) {
-        setAnalysisStats(body);
-        setAnalysisResultRoute(analysisRoute);
-        setAnalysisContext(`${analysisDirection === "return" ? "동탄 방면" : "서울 방면"} · ${analysisDayType} · ${analysisTime === allValue ? "모든 시간" : hourRange(analysisTime)}`);
-        trackEvent("analysis_submit", {
-          tab: "analysis",
-          route_name: analysisRoute,
-        });
-      }
-      setLoading(false);
     } catch (err) {
       setLoading(false);
       setError(err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다.");
@@ -322,47 +279,7 @@ export default function DashboardClient() {
         </section>
       ) : null}
 
-      {activeTab === "analysis" ? (
-        <section className="analysisWorkspace">
-          <section className="panel analysisControls">
-            <div>
-              <p className="eyebrow">분석 조건</p>
-              <h2>어디부터 만차가 잦을까요?</h2>
-            </div>
-            <form className="analysisForm" onSubmit={submitAnalysis}>
-              <PeriodFilter value={days} onChange={setDays} />
-              <label>
-                <span>버스번호</span>
-                <select value={analysisRoute} onChange={(event) => setAnalysisRoute(event.target.value)}>
-                  <option value="">선택</option>
-                  {(options?.routes ?? []).map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
-              <label><span>방향</span><select aria-label="분석 방향" value={analysisDirection} onChange={(event) => setAnalysisDirection(event.target.value)}><option value="outbound">서울 방면 · 회차 전</option><option value="return">동탄 방면 · 회차점부터</option></select></label>
-              <Filter label="분석 요일" options={dayTypeOptions} value={analysisDayType} onChange={setAnalysisDayType} />
-              <Filter label="분석 시간" options={[allValue, ...(options?.times ?? [])]} value={analysisTime} onChange={setAnalysisTime} />
-              <button className="primaryButton inlineButton" type="submit" disabled={loading || !analysisRoute}>
-                {loading ? "불러오는 중" : "분석 조회"}
-              </button>
-            </form>
-          </section>
-
-          {!analysisStats && !loading ? <div className="emptyState">버스번호를 선택한 뒤 분석 조회 버튼을 누르면 결과가 표시됩니다.</div> : null}
-          {analysisStats ? (
-            <>
-            <p className="tripContext">{analysisResultRoute} · {analysisContext}</p>
-            <AnalysisView
-              mode={analysisMode}
-              onModeChange={setAnalysisMode}
-              stats={analysisStats}
-              route={analysisResultRoute}
-            />
-            </>
-          ) : null}
-        </section>
-      ) : null}
+      {activeTab === "analysis" ? <RouteAnalysis routes={options?.routes ?? []} /> : null}
 
       {activeTab === "crowding" ? (
         <section className="analysisWorkspace">
