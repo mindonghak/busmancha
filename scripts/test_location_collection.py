@@ -90,13 +90,13 @@ class LocationTest(unittest.TestCase):
         self.assertTrue(route_active(info, datetime(2026, 9, 26, 0, 15, tzinfo=KST)))
         self.assertFalse(route_active(info, datetime(2026, 9, 26, 5, tzinfo=KST)))
 
-    def test_never_full_exclusion_requires_200_stops_and_five_days(self):
-        for day in range(5):
-            for stop in range(40):
+    def test_never_full_exclusion_requires_300_stops_and_three_days(self):
+        for day in range(3):
+            for stop in range(100):
                 self.conn.execute("insert into route_stop_daily (route_name,vehicle_id,service_date,station_seq,remain_seat) values (?,?,?,?,?)",
-                    ("candidate", f"v{stop}", f"2026-09-{20+day}", stop, 2))
+                    ("candidate", f"v{stop}", f"2026-09-{23+day}", stop, 2))
         self.conn.commit()
-        self.assertEqual(evaluate_route_exclusion(self.conn, "candidate", self.now), (200, 5, True))
+        self.assertEqual(evaluate_route_exclusion(self.conn, "candidate", self.now), (300, 3, True))
         self.assertIsNone(evaluate_route_exclusion(self.conn, "candidate", self.now))
 
     def test_zero_seat_or_insufficient_dates_never_excludes(self):

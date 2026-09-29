@@ -8,8 +8,9 @@ from datetime import datetime, timedelta, timezone
 KST = timezone(timedelta(hours=9))
 URL = "https://apis.data.go.kr/6410000/buslocationservice/v2/getBusLocationListv2"
 MAX_GAP = 360
-EXCLUSION_MIN_SAMPLES = 200
-EXCLUSION_MIN_DAYS = 5
+EXCLUSION_WINDOW_DAYS = 7
+EXCLUSION_MIN_SAMPLES = 300
+EXCLUSION_MIN_DAYS = 3
 
 
 def init_db(conn):
@@ -121,7 +122,7 @@ def add_passage(conn, name, route_id, vehicle, trip, station, seats, observed, p
 
 
 def evaluate_route_exclusion(conn, name, now):
-    since = (now.date() - timedelta(days=13)).isoformat()
+    since = (now.date() - timedelta(days=EXCLUSION_WINDOW_DAYS-1)).isoformat()
     samples, days, full = conn.execute("""select count(*),count(distinct service_date),
         coalesce(sum(remain_seat=0),0) from route_stop_daily
         where route_name=? and service_date>=?""", (name, since)).fetchone()
@@ -131,7 +132,7 @@ def evaluate_route_exclusion(conn, name, now):
     with conn:
         conn.execute("insert or ignore into route_exclusions values (?,?,?,?,?,?)",
                      (name, now.isoformat(), samples, days, full,
-                      "No zero-seat vehicle among >=200 deduplicated vehicle-stop observations across >=5 days in 14 days"))
+                      "No zero-seat vehicle among >=300 deduplicated vehicle-stop observations across >=3 days in 7 days"))
     if conn.execute("select changes()").fetchone()[0] != 1:
         return None
     return samples, days, True
