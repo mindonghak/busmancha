@@ -4,8 +4,8 @@ The default Python collector polls the route-wide location API every 180 seconds
 Run `--mode location --interval-seconds 180 --include-private`.
 The previous collector is available with `--mode arrival` for manual audits only.
 
-Public routes remain M4137, M4130, G6009 and 6002. Full-route private collection
-includes M4108, M4403, M4434, M4448 and 6001 from Hwaseong, plus 1550-1 (Suwon,
+Public routes are M4137, M4130, M4448, G6009 and 6002. Full-route private collection
+includes M4108, M4403, M4434 and 6001 from Hwaseong, plus 1550-1 (Suwon,
 Osan, Yongin, Hwaseong), 5002B (Yongin), 3000, 7001 and 5100 (Suwon/Yongin),
 1000 (Goyang), 8002 (Gapyeong/Namyangju), M4102 (Seongnam), M4101
 (Seongnam/Yongin/Suwon), and M2323 (Namyangju). Private routes never appear in
