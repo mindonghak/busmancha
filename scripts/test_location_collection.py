@@ -1,7 +1,7 @@
 import sqlite3
 import unittest
 from datetime import datetime, timedelta
-from location_collection import KST, ingest, init_db, reserve, route_active
+from location_collection import KST, ingest, init_db, reserve, route_active, evaluate_route_exclusion
 
 
 class LocationTest(unittest.TestCase):
@@ -65,11 +65,18 @@ class LocationTest(unittest.TestCase):
         self.observe(5, 1, 0, 3)
         self.assertEqual(self.rows(), [])
         self.assertEqual(self.conn.execute("select count(*) from location_history").fetchone()[0], 1)
+        self.assertEqual(self.conn.execute("select count(*) from route_stop_daily").fetchone()[0], 1)
         self.meta["stations"][4]["stationName"] = "Stop5"
         self.meta["stations"][4]["x"] = "128"
         self.observe(4, 2, 0, 0, "other")
         self.observe(5, 2, 0, 3, "other")
         self.assertEqual(self.rows(), [])
+
+    def test_route_monitor_deduplicates_and_preserves_any_zero(self):
+        self.observe(5, 2, 8)
+        self.observe(5, 2, 0, 3)
+        self.assertEqual(self.conn.execute("select remain_seat from route_stop_daily where route_name='test'").fetchone()[0], 0)
+        self.assertEqual(self.conn.execute("select count(*) from route_stop_daily where route_name='test'").fetchone()[0], 1)
 
     def test_budget_counts_attempts_and_next_day_resets(self):
         self.assertTrue(reserve(self.conn, self.now))
@@ -82,6 +89,26 @@ class LocationTest(unittest.TestCase):
         info = {"downFirstTime": "06:00", "downLastTime": "00:30", "satDownFirstTime": "07:00", "satDownLastTime": "23:00"}
         self.assertTrue(route_active(info, datetime(2026, 9, 26, 0, 15, tzinfo=KST)))
         self.assertFalse(route_active(info, datetime(2026, 9, 26, 5, tzinfo=KST)))
+
+    def test_never_full_exclusion_requires_200_stops_and_five_days(self):
+        for day in range(5):
+            for stop in range(40):
+                self.conn.execute("insert into route_stop_daily (route_name,vehicle_id,service_date,station_seq,remain_seat) values (?,?,?,?,?)",
+                    ("candidate", f"v{stop}", f"2026-09-{20+day}", stop, 2))
+        self.conn.commit()
+        self.assertEqual(evaluate_route_exclusion(self.conn, "candidate", self.now), (200, 5, True))
+        self.assertIsNone(evaluate_route_exclusion(self.conn, "candidate", self.now))
+
+    def test_zero_seat_or_insufficient_dates_never_excludes(self):
+        for day in range(4):
+            for stop in range(50):
+                self.conn.execute("insert into route_stop_daily (route_name,vehicle_id,service_date,station_seq,remain_seat) values (?,?,?,?,?)",
+                    ("no-full", f"v{stop}", f"2026-09-{20+day}", stop, 0 if day == 0 and stop == 0 else 5))
+                self.conn.execute("insert into route_stop_daily (route_name,vehicle_id,service_date,station_seq,remain_seat) values (?,?,?,?,?)",
+                    ("thin", f"v{stop}", f"2026-09-{20+day}", stop, 5))
+        self.conn.commit()
+        self.assertIsNone(evaluate_route_exclusion(self.conn, "no-full", self.now))
+        self.assertIsNone(evaluate_route_exclusion(self.conn, "thin", self.now))
 
 
 if __name__ == "__main__":

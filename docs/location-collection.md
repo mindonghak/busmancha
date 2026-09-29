@@ -5,9 +5,11 @@ Run `--mode location --interval-seconds 180 --include-private`.
 The previous collector is available with `--mode arrival` for manual audits only.
 
 Public routes remain M4137, M4130, G6009 and 6002. Full-route private collection
-includes M4108 (Dongtan to Seoul Station), M4403, M4434, M4448 and 6001 (Dongtan to
-Gangnam). Private routes never appear in website options or results automatically.
-Nine routes cost at most 4,320 scheduled calls/day, even with 24-hour operation;
+includes M4108, M4403, M4434, M4448 and 6001 from Hwaseong, plus 1550-1 (Suwon,
+Osan, Yongin, Hwaseong), 5002B (Yongin), 3000 and 7001 (Suwon), 1000 (Goyang),
+8002 (Gapyeong/Namyangju), and M4102 (Seongnam). Private routes never appear in
+website options or results automatically. Sixteen routes cost at most 7,680
+scheduled calls/day, even with 24-hour operation;
 first/last departure windows reduce this. A durable local counter stops at 9,000
 location attempts including failures. Do not run a second worker on another host.
 
@@ -36,6 +38,15 @@ probability. Check stop/hour/day coverage before publishing private routes.
 First/last departure windows can omit vehicles still finishing a trip after the
 last departure, per the existing collection policy. Metadata expires at 30 days;
 refresh using `scripts/refresh_route_catalog.py` before then.
+
+Private candidate routes are screened using the rolling 14 days in
+`route_stop_daily`. One sample per vehicle, service day and served stop is kept;
+a later zero-seat observation replaces a positive seat count. After at least
+200 such observations over five or more dates, a route is automatically removed
+from collection only if no zero-seat observation exists. Routes with unknown or
+insufficient seat data are never excluded. The evidence is retained locally;
+excluded routes are not automatically reactivated, so inspect the exclusion row
+and clear it manually if seasonal service or demand changes.
 
 ## Publication
 

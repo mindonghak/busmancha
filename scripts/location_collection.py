@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 KST = timezone(timedelta(hours=9))
 URL = "https://apis.data.go.kr/6410000/buslocationservice/v2/getBusLocationListv2"
 MAX_GAP = 360
+EXCLUSION_MIN_SAMPLES = 200
+EXCLUSION_MIN_DAYS = 5
 
 
 def init_db(conn):
@@ -37,7 +39,30 @@ def init_db(conn):
         create table if not exists location_api_budget (
             day text primary key, attempts integer not null
         );
+        create table if not exists route_stop_daily (
+            id integer primary key autoincrement, route_name text not null,
+            vehicle_id text not null, service_date text not null,
+            station_seq integer not null, remain_seat integer not null,
+            unique(route_name, vehicle_id, service_date, station_seq)
+        );
+        create table if not exists route_exclusions (
+            route_name text primary key, excluded_at text not null,
+            sample_count integer not null, active_days integer not null,
+            full_count integer not null, reason text not null
+        );
+        create table if not exists collector_migrations (
+            name text primary key, completed_at text not null
+        );
     """)
+    migrated = conn.execute("select 1 from collector_migrations where name='route_quality_v1'").fetchone()
+    if not migrated:
+        # Reuse today's snapshots collected before quality monitoring was enabled.
+        conn.execute("""insert or ignore into route_stop_daily
+            (route_name,vehicle_id,service_date,station_seq,remain_seat)
+            select route_name,vehicle_id,substr(collected_at,1,10),station_seq,min(remain_seat)
+            from location_history where remain_seat is not null and remain_seat>=0
+            group by route_name,vehicle_id,substr(collected_at,1,10),station_seq""")
+        conn.execute("insert into collector_migrations values ('route_quality_v1',datetime('now'))")
     conn.commit()
 
 
@@ -95,6 +120,23 @@ def add_passage(conn, name, route_id, vehicle, trip, station, seats, observed, p
          station["stationName"], int(station["stationSeq"]), seats, source_seq, evidence))
 
 
+def evaluate_route_exclusion(conn, name, now):
+    since = (now.date() - timedelta(days=13)).isoformat()
+    samples, days, full = conn.execute("""select count(*),count(distinct service_date),
+        coalesce(sum(remain_seat=0),0) from route_stop_daily
+        where route_name=? and service_date>=?""", (name, since)).fetchone()
+    samples, days, full = int(samples), int(days), int(full)
+    if samples < EXCLUSION_MIN_SAMPLES or days < EXCLUSION_MIN_DAYS or full:
+        return None
+    with conn:
+        conn.execute("insert or ignore into route_exclusions values (?,?,?,?,?,?)",
+                     (name, now.isoformat(), samples, days, full,
+                      "No zero-seat vehicle among >=200 deduplicated vehicle-stop observations across >=5 days in 14 days"))
+    if conn.execute("select changes()").fetchone()[0] != 1:
+        return None
+    return samples, days, True
+
+
 def ingest(conn, name, meta, row, now):
     stations = {int(s["stationSeq"]): s for s in meta["stations"]}
     try:
@@ -127,6 +169,12 @@ def ingest(conn, name, meta, row, now):
             (collected_at,route_name,route_id,vehicle_id,station_seq,state_code,remain_seat,trip_id)
             values (?,?,?,?,?,?,?,?)""", (now.isoformat(), name, route_id, vehicle, seq, code,
                                            seats if seats >= 0 else None, state["trip"]))
+        if seats >= 0:
+            conn.execute("""insert into route_stop_daily
+                (route_name,vehicle_id,service_date,station_seq,remain_seat)
+                values (?,?,?,?,?) on conflict(route_name,vehicle_id,service_date,station_seq)
+                do update set remain_seat=0 where route_stop_daily.remain_seat>0
+                and excluded.remain_seat=0""", (name, vehicle, now.date().isoformat(), seq, seats))
     pending = state.get("pending")
     if pending:
         observed = datetime.fromisoformat(pending["at"])
@@ -162,6 +210,10 @@ def collect(conn, api, route_names=None, include_private=True, weather=True):
     now = datetime.now(KST)
     active = False
     for name, route_id in selected.items():
+        if name in config["private"]:
+            excluded = conn.execute("select 1 from route_exclusions where route_name=?", (name,)).fetchone()
+            if excluded:
+                continue
         meta = catalog.get(name)
         if not meta or (now.replace(tzinfo=None)-datetime.fromisoformat(meta["updatedAt"])).days > 30:
             api.log(f"location route={name} skipped=refresh_metadata_required")
@@ -187,6 +239,10 @@ def collect(conn, api, route_names=None, include_private=True, weather=True):
                     ingest(conn, name, meta, row, observed)
             added = conn.execute("select count(*) from station_passages").fetchone()[0] - before
             api.log(f"location route={name} vehicles={len(rows)} passages={added}")
+            if name in config["private"]:
+                excluded = evaluate_route_exclusion(conn, name, now)
+                if excluded and excluded[2]:
+                    api.log(f"location route={name} excluded=zero_full_observations samples={excluded[0]} days={excluded[1]}")
         except Exception as exc:
             api.log(f"location route={name} error={type(exc).__name__}")
     # Weather is hourly; a faster bus loop must not multiply identical weather rows.
