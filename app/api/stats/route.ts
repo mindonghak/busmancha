@@ -57,7 +57,7 @@ function parseHour(value: string) {
 const baseCte = `
   with daily_weather as (
     select
-      collected_at::date as service_date,
+      (collected_at at time zone 'Asia/Seoul')::date as service_date,
       max(temperature) as max_temperature,
       case
         when bool_or(coalesce(precipitation_type, '0') in ('2', '3', '6', '7')) then '눈'
@@ -66,14 +66,14 @@ const baseCte = `
       end as daily_weather_condition
     from weather_history
     where area_key = 'gangnam'
-    group by collected_at::date
+    group by (collected_at at time zone 'Asia/Seoul')::date
   ),
   seat_weather as (
     select
       s.*,
       coalesce(w.daily_weather_condition, '날씨 없음') as weather_condition,
       w.max_temperature
-    from seat_history s
+    from approach_seat_history s
     left join daily_weather w on w.service_date = s.service_date
   )
 `;

@@ -71,7 +71,7 @@ export default function RouteAnalysis({ routes }: { routes: string[] }) {
           <p className="eyebrow">{route} · {direction === "outbound" ? "서울 방면" : "동탄 방면"} · {day} · {weather === "전체" ? "모든 날씨" : weather}</p>
           <h2>{selected.name}</h2><h3>시간대별 만차 관측 비율</h3>
           {error ? <p role="alert">{error} <button onClick={() => setRetry(r => r + 1)}>다시 시도</button></p> : !data ? <p role="status">통계를 불러오는 중입니다.</p> : <>
-            {hours.length === 0 ? <p>조건에 맞는 관측 기록이 없습니다.</p> : <p className="hourNote">표본 {hours.reduce((n, r) => n + r.samples, 0).toLocaleString()}건 · 마지막 관측일 {last}</p>}
+            {hours.length === 0 ? <p>정류장 도착 전후의 새 기준으로 표본을 수집 중입니다. 선택한 조건의 기록이 아직 없습니다.</p> : <p className="hourNote">표본 {hours.reduce((n, r) => n + r.samples, 0).toLocaleString()}건 · 마지막 관측일 {last}</p>}
             {last && Date.now() - new Date(`${last}T23:59:59+09:00`).getTime() > 3 * 86400000 ? <p className="hourWarning">최근 3일간 관측이 없는 과거 기록입니다.</p> : null}
             <div className="hourChartScroll"><div className="hourChart" role="img" aria-label="0시부터 23시까지 시간대별 만차 비율. 상세 수치는 아래 표에서 확인할 수 있습니다.">
               <div className="hourAxis"><span>100%</span><span>50%</span><span>0%</span></div>
@@ -82,7 +82,7 @@ export default function RouteAnalysis({ routes }: { routes: string[] }) {
               </div>; })}
             </div></div>
             <p className="hourNote">사선: 표본 30건 미만 또는 관측 3일 미만 · —: 기록 없음 · 시간 단위: 시</p>
-            <p className="hourNote">실제 탑승 보장 확률이 아닌 수집 기록의 만차 비율입니다. 같은 차량이 반복 관측될 수 있습니다. 평일은 월~금, 주말은 토·일이며 공휴일은 별도 분리하지 않습니다.</p>
+            <p className="hourNote">도착 상태 또는 직전 정류장 출발 좌석을 확인한 운행만 집계합니다. 한 운행은 정류장별 1건이며, 기존 도착예정 차량 통계는 포함하지 않습니다. 실제 탑승 여부와 차이가 있을 수 있습니다. 평일은 월~금, 주말은 토·일입니다.</p>
             <details><summary>시간대별 표본과 잔여좌석</summary><div className="hourChartScroll"><table className="hourTable"><thead><tr><th>시간</th><th>만차 비율</th><th>평균 잔여좌석</th><th>만차 / 표본</th><th>관측 일수</th></tr></thead><tbody>{hours.map(r => <tr key={r.hour}><td>{r.hour}:00–{r.hour}:59</td><td>{r.probability}%</td><td>{r.seats}석</td><td>{r.full} / {r.samples}</td><td>{r.days}일</td></tr>)}</tbody></table></div></details>
           </>}
         </>}

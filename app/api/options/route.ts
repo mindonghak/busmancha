@@ -1,43 +1,21 @@
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
 import { publicRoutes } from "@/lib/public-routes";
+import catalog from "@/config/route-catalog.json";
 
-const MIN_STATION_SAMPLE_COUNT = 10;
 const weekdays = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"];
 
 export async function GET() {
   try {
-    const [routes, stations, times] = await Promise.all([
-      query<{ route_name: string }>("select distinct route_name from seat_history order by route_name"),
-      query<{ route_name: string; station_id: string; station_name: string; station_seq: number }>(
-        `
-        select route_name, station_id, station_name, station_seq
-        from seat_history
-        where station_name is not null
-          and remain_seat is not null
-          and remain_seat >= 0
-          and station_name not like '%(경유)%'
-          and station_name not like '%(미정차)%'
-        group by route_name, station_id, station_name, station_seq
-        having count(*) >= ${MIN_STATION_SAMPLE_COUNT}
-        order by route_name, station_seq
-        `
-      ),
-      query<{ time_label: string }>(
-        `
-        select distinct lpad(split_part(time_hhmm, ':', 1), 2, '0') || '시' as time_label
-        from seat_history
-        where time_hhmm is not null
-        order by time_label
-        `
-      ),
-    ]);
-
     return NextResponse.json({
-      routes: routes.rows.map((row) => row.route_name).filter((name) => publicRoutes.includes(name)),
+      routes: publicRoutes,
       weekdays,
-      times: times.rows.map((row) => row.time_label),
-      stations: stations.rows.filter((row) => publicRoutes.includes(row.route_name)),
+      times: Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, "0")}시`),
+      stations: publicRoutes.flatMap(route => {
+        const metadata = catalog[route as keyof typeof catalog];
+        return metadata.stations.filter(s => !/\(경유\)|\(미정차\)/.test(s.stationName)).map(s => ({
+          route_name: route, station_id: s.stationId, station_name: s.stationName, station_seq: Number(s.stationSeq),
+        }));
+      }),
       weatherConditions: ["강수없음", "비", "눈"],
     });
   } catch (error) {

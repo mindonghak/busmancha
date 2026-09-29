@@ -20,7 +20,9 @@ def main():
         catalog[name] = {"routeId": route_id, "updatedAt": datetime.now().isoformat(),
                          "info": info[0], "stations": stations}
     target = c.ROOT / "config/route-catalog.json"
-    target.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary = target.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(target)
     print(json.dumps({name: {"stops": len(r["stations"]), "info": r["info"]} for name, r in catalog.items()}, ensure_ascii=True))
 
 

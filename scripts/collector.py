@@ -632,7 +632,8 @@ def main() -> int:
     global DB_PATH
     load_dotenv()
 
-    parser = argparse.ArgumentParser(description="Collect Gyeonggi bus arrival seat data.")
+    parser = argparse.ArgumentParser(description="Collect Gyeonggi bus seat data.")
+    parser.add_argument("--mode", choices=("location", "arrival"), default="location")
     parser.add_argument("--db-path", default=str(DB_PATH))
     parser.add_argument("--once", action="store_true", help="Collect one batch and exit.")
     parser.add_argument("--interval-seconds", type=int, default=180)
@@ -663,6 +664,37 @@ def main() -> int:
 
     with sqlite3.connect(db_path) as conn:
         init_db(conn)
+        if args.mode == "location":
+            from location_collection import collect
+            # A file lock prevents two local workers from spending the same quota.
+            lock = (db_path.parent / "location-collector.lock").open("a+")
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    lock.seek(0)
+                    lock.write("0")
+                    lock.flush()
+                    lock.seek(0)
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                lock.close()
+                raise SystemExit("A location collector is already running for this database.")
+            try:
+                while True:
+                    started = time.monotonic()
+                    collect(conn, sys.modules[__name__], route_names, args.include_private, not args.no_weather)
+                    if not args.no_postgres_sync:
+                        sync_postgres_if_configured()
+                    if args.once:
+                        return 0
+                    delay = max(0, max(180, args.interval_seconds) - (time.monotonic()-started))
+                    log(f"location sleep_seconds={delay:.1f}")
+                    time.sleep(delay)
+            finally:
+                lock.close()
         if args.once:
             collect_once(
                 conn,

@@ -17,6 +17,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (process.env.ENABLE_LEGACY_ARRIVAL_COLLECTOR !== "true") {
+    return NextResponse.json({ skipped: "Collection is owned by the three-minute location worker." });
+  }
+
   try {
     const result = await collectOnce();
     await recordCollectorRun("success", result);

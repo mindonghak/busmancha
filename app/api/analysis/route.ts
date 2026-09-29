@@ -22,12 +22,12 @@ export async function GET(request: NextRequest) {
     // Aggregate once for every stop/hour; selecting a stop requires no new DB query.
     const result = await query(`
       with daily_weather as (
-        select collected_at::date as service_date,
+        select (collected_at at time zone 'Asia/Seoul')::date as service_date,
           case when bool_or(coalesce(precipitation_type, '0') in ('2','3','6','7')) then '눈'
           when bool_or(coalesce(precipitation_1h,0)>0 or coalesce(precipitation_type,'0')<>'0') then '비'
           else '강수없음' end as condition
         from weather_history where area_key='gangnam' and $3 <> '전체'
-        group by collected_at::date
+        group by (collected_at at time zone 'Asia/Seoul')::date
       )
       select station_seq as seq, split_part(time_hhmm,':',1)::int as hour,
         count(*)::int as samples, count(distinct s.service_date)::int as days,
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
         round(avg(remain_seat)::numeric,1)::float as seats,
         round(100.0*count(*) filter(where remain_seat=0)/count(*),1)::float as probability,
         min(s.service_date)::text as first_date, max(s.service_date)::text as last_date
-      from seat_history s left join daily_weather w on w.service_date=s.service_date
+      from approach_seat_history s left join daily_weather w on w.service_date=s.service_date
       where route_name=$1 and remain_seat>=0
         and station_name not like '%(경유)%' and station_name not like '%(미정차)%'
         and ($2='전체' or ($2='평일' and day_of_week between 0 and 4) or ($2='주말' and day_of_week between 5 and 6))

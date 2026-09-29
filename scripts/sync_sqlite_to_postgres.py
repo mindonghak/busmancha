@@ -212,8 +212,11 @@ def main() -> int:
             init_postgres(pg_conn)
             seat_count = sync_seats(sqlite_conn, pg_conn)
             weather_count = sync_weather(sqlite_conn, pg_conn)
+            from sync_locations import sync
+            location_counts = sync(sqlite_conn, pg_conn)
 
     print(f"synced seat_history={seat_count} weather_history={weather_count}")
+    print(" ".join(f"{name}={count}" for name, count in location_counts.items()))
     return 0
 
 

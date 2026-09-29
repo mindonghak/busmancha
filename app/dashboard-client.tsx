@@ -718,6 +718,6 @@ function DataCoverage({ summary }: { summary: Summary }) {
     <span>{dateRange(summary.first_collected_at, summary.last_collected_at)}</span>
     {count > 0 && (days < 3 || count < 30) ? <strong>표본 부족 · 장기적인 패턴으로 판단하기 어렵습니다.</strong> : null}
     {stale ? <strong>최근 36시간 내 관측이 없는 결과입니다.</strong> : null}
-    <small>만차확률은 수집된 좌석 관측 중 0석의 비율입니다. 같은 차량의 반복 관측이 포함될 수 있습니다.</small>
+    <small>도착 상태 또는 직전 정류장 출발 좌석을 확인한 운행 중 0석의 비율입니다. 정류장별 한 운행을 1건으로 셉니다. 기존 기록은 제외하고 새 기준의 표본을 수집 중입니다.</small>
   </div>;
 }
