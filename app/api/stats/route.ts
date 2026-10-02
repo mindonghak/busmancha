@@ -54,7 +54,8 @@ function parseHour(value: string) {
   return Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : null;
 }
 
-const baseCte = `
+function baseCte(historyTable: "approach_seat_history" | "seat_history") {
+  return `
   with daily_weather as (
     select
       (collected_at at time zone 'Asia/Seoul')::date as service_date,
@@ -73,10 +74,11 @@ const baseCte = `
       s.*,
       coalesce(w.daily_weather_condition, '날씨 없음') as weather_condition,
       w.max_temperature
-    from approach_seat_history s
+    from ${historyTable} s
     left join daily_weather w on w.service_date = s.service_date
   )
 `;
+}
 
 function buildWhere(params: URLSearchParams, skip: string | null = null) {
   const clauses = [
@@ -151,12 +153,13 @@ async function groupedStats(
   params: URLSearchParams,
   skip: string,
   orderSql = "label",
-  minSampleCount = 0
+  minSampleCount = 0,
+  historyTable: "approach_seat_history" | "seat_history" = "approach_seat_history"
 ) {
   const { where, values } = buildWhere(params);
   const result = await query<GroupRow>(
     `
-    ${baseCte}
+    ${baseCte(historyTable)}
     select
       ${labelSql} as label,
       count(*)::text as sample_count,
@@ -179,12 +182,13 @@ async function filteredGroupedStats(
   labelSql: string,
   params: URLSearchParams,
   orderSql = "label",
-  minSampleCount = 0
+  minSampleCount = 0,
+  historyTable: "approach_seat_history" | "seat_history" = "approach_seat_history"
 ) {
   const { where, values } = buildWhere(params);
   const result = await query<GroupRow>(
     `
-    ${baseCte}
+    ${baseCte(historyTable)}
     select
       ${labelSql} as label,
       count(*)::text as sample_count,
@@ -204,11 +208,11 @@ async function filteredGroupedStats(
   return result.rows;
 }
 
-async function weatherGroupedStats(params: URLSearchParams) {
+async function weatherGroupedStats(params: URLSearchParams, historyTable: "approach_seat_history" | "seat_history") {
   const { where, values } = buildWhere(params);
   const result = await query<GroupRow>(
     `
-    ${baseCte}
+    ${baseCte(historyTable)}
     select
       weather_condition as label,
       count(*)::text as sample_count,
@@ -226,11 +230,11 @@ async function weatherGroupedStats(params: URLSearchParams) {
   return result.rows;
 }
 
-async function temperatureGroupedStats(params: URLSearchParams) {
+async function temperatureGroupedStats(params: URLSearchParams, historyTable: "approach_seat_history" | "seat_history") {
   const { where, values } = buildWhere(params);
   const result = await query<GroupRow>(
     `
-    ${baseCte}
+    ${baseCte(historyTable)}
     select
       (floor(max_temperature / 3) * 3)::int::text || '°C 이상 ' || ((floor(max_temperature / 3) * 3)::int + 3)::text || '°C 미만' as label,
       count(*)::text as sample_count,
@@ -248,11 +252,11 @@ async function temperatureGroupedStats(params: URLSearchParams) {
   return result.rows;
 }
 
-async function hotspotStats(params: URLSearchParams) {
+async function hotspotStats(params: URLSearchParams, historyTable: "approach_seat_history" | "seat_history") {
   const { where, values } = buildWhere(params);
   const result = await query<HotspotRow>(
     `
-    ${baseCte}
+    ${baseCte(historyTable)}
     select
       station_seq::text || '. ' || station_name as station_label,
       station_seq::int as station_seq,
@@ -297,9 +301,15 @@ export async function GET(request: NextRequest) {
 
   try {
     const { where, values } = buildWhere(params);
+    const freshCount = await query<{ count: string }>(
+      `${baseCte("approach_seat_history")} select count(*)::text as count from seat_weather ${where}`,
+      values
+    );
+    const historyTable: "approach_seat_history" | "seat_history" =
+      Number(freshCount.rows[0]?.count ?? 0) > 0 ? "approach_seat_history" : "seat_history";
     const summary = await query<SummaryRow>(
       `
-      ${baseCte}
+      ${baseCte(historyTable)}
       select
         count(*)::text as sample_count,
         count(distinct service_date)::text as service_days,
@@ -333,13 +343,16 @@ export async function GET(request: NextRequest) {
         params,
         "station",
         "min(station_seq)",
-        MIN_STATION_SAMPLE_COUNT
+        MIN_STATION_SAMPLE_COUNT,
+        historyTable
       ),
       groupedStats(
         "lpad(split_part(time_hhmm, ':', 1), 2, '0') || '시'",
         params,
         "time",
-        "min(split_part(time_hhmm, ':', 1)::int)"
+        "min(split_part(time_hhmm, ':', 1)::int)",
+        0,
+        historyTable
       ),
       groupedStats(
         `case day_of_week
@@ -353,29 +366,32 @@ export async function GET(request: NextRequest) {
         end`,
         params,
         "weekday",
-        "min(day_of_week)"
+        "min(day_of_week)",
+        0,
+        historyTable
       ),
-      weatherGroupedStats(params),
-      temperatureGroupedStats(params),
+      weatherGroupedStats(params, historyTable),
+      temperatureGroupedStats(params, historyTable),
       filteredGroupedStats(
         "station_seq::text || '. ' || station_name",
         params,
         "min(station_seq)",
-        MIN_STATION_SAMPLE_COUNT
+        MIN_STATION_SAMPLE_COUNT,
+        historyTable
       ),
-      hotspotStats(params),
+      hotspotStats(params, historyTable),
     ]);
 
     const comparisonParams = new URLSearchParams(params);
     comparisonParams.delete("time");
     const nearbyTimes = params.has("time") && (params.has("stationSeq") || params.has("station"))
-      ? await filteredGroupedStats("lpad(split_part(time_hhmm, ':', 1), 2, '0') || '시'", comparisonParams, "min(split_part(time_hhmm, ':', 1)::int)")
+      ? await filteredGroupedStats("lpad(split_part(time_hhmm, ':', 1), 2, '0') || '시'", comparisonParams, "min(split_part(time_hhmm, ':', 1)::int)", 0, historyTable)
       : [];
 
     let routeProfile = null;
     if (params.get("profile") === "1") {
       const metadata = catalog[params.get("route") as keyof typeof catalog];
-      const observed = await filteredGroupedStats("station_seq::text", params, "min(station_seq)");
+      const observed = await filteredGroupedStats("station_seq::text", params, "min(station_seq)", 0, historyTable);
       const turn = Number(metadata.stations[0].turnSeq);
       const direction = params.get("direction");
       routeProfile = {
@@ -392,6 +408,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       routeProfile,
+      dataSource: historyTable === "seat_history" ? "historical" : "near_stop",
       nearbyTimes,
       summary: summary.rows[0],
       byRoute,

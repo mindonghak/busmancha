@@ -51,6 +51,7 @@ type HotspotRow = {
 };
 
 type StatsResponse = {
+  dataSource?: "near_stop" | "historical";
   routeProfile: { direction: string; destination: string; stops: { seq: number; name: string; stats: GroupRow | null }[] } | null;
   nearbyTimes: GroupRow[];
   summary: Summary;
@@ -235,6 +236,7 @@ export default function DashboardClient() {
               <SearchResult
                 nearbyTimes={searchStats.nearbyTimes ?? []}
                 summary={searchStats.summary}
+                dataSource={searchStats.dataSource}
                 byTime={searchStats.byTime}
                 byWeekday={searchStats.byWeekday}
                 byWeather={searchStats.byWeather}
@@ -312,6 +314,7 @@ function Filter({
 function SearchResult({
   nearbyTimes,
   summary,
+  dataSource,
   byTime,
   byWeekday,
   byWeather,
@@ -324,6 +327,7 @@ function SearchResult({
 }: {
   nearbyTimes: GroupRow[];
   summary: Summary;
+  dataSource?: "near_stop" | "historical";
   byTime: GroupRow[];
   byWeekday: GroupRow[];
   byWeather: GroupRow[];
@@ -352,6 +356,7 @@ function SearchResult({
 
   return (
     <>
+      {dataSource === "historical" ? <div className="noticeBox">이 조건은 새 수집 기준 표본이 없어 과거 수집 기록으로 보여드립니다. 참고용으로 확인해 주세요.</div> : null}
       <BoardingOutcome summary={summary} route={route} station={station} time={time} weekday={weekday} />
       {station !== allValue && time !== allValue ? <NearbyTimes rows={nearbyTimes} selectedTime={time} /> : null}
       <section className="panel noTopPadding">
@@ -718,6 +723,6 @@ function DataCoverage({ summary }: { summary: Summary }) {
     <span>{dateRange(summary.first_collected_at, summary.last_collected_at)}</span>
     {count > 0 && (days < 3 || count < 30) ? <strong>표본 부족 · 장기적인 패턴으로 판단하기 어렵습니다.</strong> : null}
     {stale ? <strong>최근 36시간 내 관측이 없는 결과입니다.</strong> : null}
-    <small>도착 상태 또는 직전 정류장 출발 좌석을 확인한 운행 중 0석의 비율입니다. 정류장별 한 운행을 1건으로 셉니다. 기존 기록은 제외하고 새 기준의 표본을 수집 중입니다.</small>
+    <small>도착 상태 또는 직전 정류장 출발 좌석을 확인한 운행 중 0석의 비율입니다. 정류장별 한 운행을 1건으로 셉니다.</small>
   </div>;
 }

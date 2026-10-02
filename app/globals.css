@@ -410,13 +410,20 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--blue); out
 }
 
 .errorBox,
-.emptyState {
+.emptyState,
+.noticeBox {
   background: #fff7ed;
   border: 1px solid #fed7aa;
   color: #8a4b12;
   font-weight: 700;
   margin-bottom: 14px;
   padding: 14px 16px;
+}
+
+.noticeBox {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e4f82;
 }
 
 .routeLine {
