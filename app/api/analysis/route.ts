@@ -20,6 +20,25 @@ export async function GET(request: NextRequest) {
   if (p.get("metadata") === "1") return NextResponse.json({ stops }, { headers });
   try {
     // Aggregate once for every stop/hour; selecting a stop requires no new DB query.
+    const fresh = await query<{ samples: string; days: string }>(`
+      with daily_weather as (
+        select (collected_at at time zone 'Asia/Seoul')::date as service_date,
+          case when bool_or(coalesce(precipitation_type, '0') in ('2','3','6','7')) then '눈'
+          when bool_or(coalesce(precipitation_1h,0)>0 or coalesce(precipitation_type,'0')<>'0') then '비'
+          else '강수없음' end as condition
+        from weather_history where area_key='gangnam'
+        group by (collected_at at time zone 'Asia/Seoul')::date
+      )
+      select count(*)::text as samples, count(distinct s.service_date)::text as days
+      from approach_seat_history s left join daily_weather w on w.service_date=s.service_date
+      where route_name=$1 and remain_seat>=0
+        and station_name not like '%(경유)%' and station_name not like '%(미정차)%'
+        and ($2='전체' or ($2='평일' and day_of_week between 0 and 4) or ($2='주말' and day_of_week between 5 and 6))
+        and ($3='전체' or w.condition=$3)
+        and ($4::int=0 or s.service_date >= (current_timestamp at time zone 'Asia/Seoul')::date-($4::int-1))
+    `, [route, day, weather, Number(days)]);
+    const useHistorical = Number(fresh.rows[0]?.samples ?? 0) < 30 || Number(fresh.rows[0]?.days ?? 0) < 3;
+    const historyTable = useHistorical ? "seat_history" : "approach_seat_history";
     const result = await query(`
       with daily_weather as (
         select (collected_at at time zone 'Asia/Seoul')::date as service_date,
@@ -35,7 +54,7 @@ export async function GET(request: NextRequest) {
         round(avg(remain_seat)::numeric,1)::float as seats,
         round(100.0*count(*) filter(where remain_seat=0)/count(*),1)::float as probability,
         min(s.service_date)::text as first_date, max(s.service_date)::text as last_date
-      from approach_seat_history s left join daily_weather w on w.service_date=s.service_date
+      from ${historyTable} s left join daily_weather w on w.service_date=s.service_date
       where route_name=$1 and remain_seat>=0
         and station_name not like '%(경유)%' and station_name not like '%(미정차)%'
         and ($2='전체' or ($2='평일' and day_of_week between 0 and 4) or ($2='주말' and day_of_week between 5 and 6))
@@ -43,7 +62,7 @@ export async function GET(request: NextRequest) {
         and ($4::int=0 or s.service_date >= (current_timestamp at time zone 'Asia/Seoul')::date-($4::int-1))
       group by station_seq, split_part(time_hhmm,':',1)::int order by station_seq,hour
     `, [route, day, weather, Number(days)]);
-    return NextResponse.json({ stops, rows: result.rows }, { headers });
+    return NextResponse.json({ stops, rows: result.rows, dataSource: useHistorical ? "historical" : "near_stop" }, { headers });
   } catch {
     return NextResponse.json({ error: "분석 데이터를 불러오지 못했습니다. 다시 시도해 주세요." }, { status: 503 });
   }
