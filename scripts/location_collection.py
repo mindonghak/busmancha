@@ -10,7 +10,11 @@ URL = "https://apis.data.go.kr/6410000/buslocationservice/v2/getBusLocationListv
 MAX_GAP = 360
 DAILY_LIMIT = 9000
 PLANNED_DAILY_LIMIT = 8500
-POLL_TICK = 180
+POLL_TICK = 60
+PUBLIC_INTERVAL = 180
+PRIVATE_INTERVAL = 600
+PRIVATE_WINDOWS = ((6, 10), (17, 21))
+MAX_ACTIVE_PILOTS = 120
 EXCLUSION_WINDOW_DAYS = 7
 EXCLUSION_MIN_SAMPLES = 300
 EXCLUSION_MIN_DAYS = 3
@@ -45,6 +49,21 @@ def init_db(conn):
         );
         create table if not exists location_route_poll (
             route_id text primary key, last_attempt_at text not null
+        );
+        create table if not exists pilot_selection (
+            service_date text not null, route_name text not null,
+            primary key(service_date, route_name)
+        );
+        create table if not exists route_peak_daily (
+            route_name text not null, vehicle_id text not null,
+            service_date text not null, station_seq integer not null,
+            remain_seat integer not null,
+            primary key(route_name, vehicle_id, service_date, station_seq)
+        );
+        create table if not exists route_peak_checks (
+            route_name text not null, service_date text not null,
+            period text not null, valid_checks integer not null,
+            primary key(route_name, service_date, period)
         );
         create table if not exists route_stop_daily (
             id integer primary key autoincrement, route_name text not null,
@@ -86,16 +105,59 @@ def reserve(conn, now):
 
 
 def polling_intervals(public_count, private_count):
-    # Bound usage even if every route runs 24 hours; preserve space for pilots.
-    public_budget = PLANNED_DAILY_LIMIT * (0.6 if private_count else 1)
-    public_interval = max(POLL_TICK, math.ceil(public_count * 86400 / public_budget / POLL_TICK) * POLL_TICK)
-    remaining = PLANNED_DAILY_LIMIT - public_count * 86400 / public_interval
-    private_interval = max(POLL_TICK, math.ceil(private_count * 86400 / remaining / POLL_TICK) * POLL_TICK)
-    return public_interval, private_interval
+    return PUBLIC_INTERVAL, PRIVATE_INTERVAL
+
+
+def pilot_period(now):
+    local = now.astimezone(KST)
+    if local.weekday() >= 5:
+        return None
+    for period, (start, end) in zip(('am', 'pm'), PRIVATE_WINDOWS):
+        if start <= local.hour < end:
+            return period
+    return None
+
+
+def pilot_capacity(public_count):
+    peak_seconds = sum(end-start for start, end in PRIVATE_WINDOWS) * 3600
+    remaining = PLANNED_DAILY_LIMIT - public_count * 86400 / PUBLIC_INTERVAL
+    return max(0, min(MAX_ACTIVE_PILOTS, int(remaining // (peak_seconds / PRIVATE_INTERVAL))))
+
+
+def select_pilot_routes(conn, candidates, now, capacity, priority=()):
+    if not pilot_period(now) or capacity <= 0:
+        return []
+    excluded = {row[0] for row in conn.execute('select route_name from route_exclusions')}
+    eligible = set(candidates) - excluded
+    today = now.astimezone(KST).date().isoformat()
+    selected = [row[0] for row in conn.execute('select route_name from pilot_selection where service_date=? order by rowid', (today,)) if row[0] in eligible][:capacity]
+    if len(selected) == capacity:
+        return selected
+    since = (now.date() - timedelta(days=14)).isoformat()
+    observed_full = dict(conn.execute('''select route_name,count(*) from route_stop_daily
+        where service_date>=? and remain_seat=0 group by route_name''', (since,)))
+    for name in priority:
+        observed_full.setdefault(name, 1)
+    last_selected = dict(conn.execute('select route_name,max(service_date) from pilot_selection group by route_name'))
+    remaining = eligible - set(selected)
+    sort_key = lambda name: (last_selected.get(name, ''), -observed_full.get(name, 0), name)
+    known = sorted((name for name in remaining if name in observed_full), key=sort_key)
+    candidate_order = {name: index for index, name in enumerate(candidates)}
+    trial = sorted((name for name in remaining if name not in observed_full),
+                   key=lambda name: (last_selected.get(name, ''), candidate_order[name]))
+    # Reserve a quarter of daily slots for discovering new crowded routes.
+    desired_known = capacity - max(1, capacity // 4)
+    existing_known = sum(name in observed_full for name in selected)
+    preferred = known[:max(0, desired_known-existing_known)]
+    additions = (preferred + trial + known[len(preferred):])[:capacity-len(selected)]
+    with conn:
+        conn.executemany('insert or ignore into pilot_selection values (?,?)', [(today, name) for name in additions])
+    return selected + additions
 
 
 def poll_due(conn, route_id, now, interval):
     row = conn.execute("select last_attempt_at from location_route_poll where route_id=?", (route_id,)).fetchone()
+    # Avoid delaying a whole scheduler tick for sub-second network/timer jitter.
     return not row or (now - datetime.fromisoformat(row[0])).total_seconds() >= interval - 1
 
 
@@ -144,15 +206,20 @@ def add_passage(conn, name, route_id, vehicle, trip, station, seats, observed, p
 def evaluate_route_exclusion(conn, name, now):
     since = (now.date() - timedelta(days=EXCLUSION_WINDOW_DAYS-1)).isoformat()
     samples, days, full = conn.execute("""select count(*),count(distinct service_date),
-        coalesce(sum(remain_seat=0),0) from route_stop_daily
-        where route_name=? and service_date>=?""", (name, since)).fetchone()
+        coalesce(sum(remain_seat=0),0) from route_peak_daily
+        where route_name=? and service_date>=? and service_date in (
+            select service_date from route_peak_checks where route_name=? and valid_checks>=3
+            group by service_date having count(distinct period)=2
+        )""", (name, since, name)).fetchone()
     samples, days, full = int(samples), int(days), int(full)
     if samples < EXCLUSION_MIN_SAMPLES or days < EXCLUSION_MIN_DAYS or full:
+        return None
+    if conn.execute('select 1 from route_peak_daily where route_name=? and service_date>=? and remain_seat=0 limit 1', (name, since)).fetchone():
         return None
     with conn:
         conn.execute("insert or ignore into route_exclusions values (?,?,?,?,?,?)",
                      (name, now.isoformat(), samples, days, full,
-                      "No zero-seat vehicle among >=300 deduplicated vehicle-stop observations across >=3 days in 7 days"))
+                      "No zero seats in >=300 rush-hour observations across >=3 weekdays, each covering morning and evening"))
     if conn.execute("select changes()").fetchone()[0] != 1:
         return None
     return samples, days, True
@@ -196,6 +263,11 @@ def ingest(conn, name, meta, row, now):
                 values (?,?,?,?,?) on conflict(route_name,vehicle_id,service_date,station_seq)
                 do update set remain_seat=0 where route_stop_daily.remain_seat>0
                 and excluded.remain_seat=0""", (name, vehicle, now.date().isoformat(), seq, seats))
+            if pilot_period(now):
+                conn.execute('''insert into route_peak_daily values (?,?,?,?,?)
+                    on conflict(route_name,vehicle_id,service_date,station_seq)
+                    do update set remain_seat=0 where route_peak_daily.remain_seat>0 and excluded.remain_seat=0''',
+                    (name, vehicle, now.date().isoformat(), seq, seats))
     pending = state.get("pending")
     if pending:
         observed = datetime.fromisoformat(pending["at"])
@@ -219,6 +291,7 @@ def ingest(conn, name, meta, row, now):
     state.update(seq=seq, seen=now.isoformat())
     conn.execute("insert into location_vehicle_state values (?,?,?) on conflict(route_id,vehicle_id) do update set payload=excluded.payload",
                  (route_id, vehicle, json.dumps(state)))
+    return seats if seats >= 0 and is_service(station) else None
 
 
 def collect(conn, api, route_names=None, include_private=True, weather=True):
@@ -228,11 +301,14 @@ def collect(conn, api, route_names=None, include_private=True, weather=True):
     selected = {**config["public"], **(config["private"] if include_private else {})}
     if route_names:
         selected = {k: v for k, v in selected.items() if k in route_names or (include_private and k in config["private"])}
-    public_count = sum(name in config["public"] for name in selected)
-    private_count = len(selected) - public_count
-    public_interval, private_interval = polling_intervals(public_count, private_count)
-    api.log(f"location_schedule routes={len(selected)} public_seconds={public_interval} private_seconds={private_interval}")
     now = datetime.now(KST)
+    public_count = sum(name in config['public'] for name in selected)
+    candidates = [name for name in selected if name in config['private'] and name in catalog
+                  and (now.replace(tzinfo=None)-datetime.fromisoformat(catalog[name]['updatedAt'])).days <= 30]
+    pilots = select_pilot_routes(conn, candidates, now, pilot_capacity(public_count), config.get('pilot_priority', []))
+    selected = {name: route_id for name, route_id in selected.items() if name in config['public'] or name in pilots}
+    public_interval, private_interval = polling_intervals(public_count, len(pilots))
+    api.log(f"location_schedule routes={len(selected)} candidate_pool={len(candidates)} active_pilots={len(pilots)} peak={pilot_period(now)} public_seconds={public_interval} private_seconds={private_interval}")
     active = False
     for name, route_id in selected.items():
         if name in config["private"]:
@@ -245,16 +321,19 @@ def collect(conn, api, route_names=None, include_private=True, weather=True):
             continue
         if not route_active(meta["info"], now):
             continue
+        attempt_at = datetime.now(KST)
+        if name in config['private'] and not pilot_period(attempt_at):
+            continue
         active = True
         interval = public_interval if name in config["public"] else private_interval
-        if not poll_due(conn, route_id, now, interval):
+        if not poll_due(conn, route_id, attempt_at, interval):
             continue
-        if not reserve(conn, now):
+        if not reserve(conn, attempt_at):
             api.log("location skipped=daily_budget_exhausted")
             break
         with conn:
             conn.execute("insert into location_route_poll values (?,?) on conflict(route_id) do update set last_attempt_at=excluded.last_attempt_at",
-                         (route_id, now.isoformat()))
+                         (route_id, attempt_at.isoformat()))
         try:
             payload = api.fetch_text(URL, {"serviceKey": api.service_key(), "routeId": route_id, "format": "xml"})
             import xml.etree.ElementTree as ET
@@ -265,9 +344,15 @@ def collect(conn, api, route_names=None, include_private=True, weather=True):
             rows = api.xml_items(payload, "busLocationList")
             before = conn.execute("select count(*) from station_passages").fetchone()[0]
             observed = datetime.now(KST)
+            valid_observed = False
             with conn:
                 for row in rows:
-                    ingest(conn, name, meta, row, observed)
+                    valid_observed |= ingest(conn, name, meta, row, observed) is not None
+                period = pilot_period(observed)
+                if name in config['private'] and period and valid_observed:
+                    conn.execute('''insert into route_peak_checks values (?,?,?,1)
+                        on conflict(route_name,service_date,period) do update set valid_checks=valid_checks+1''',
+                        (name, observed.date().isoformat(), period))
             added = conn.execute("select count(*) from station_passages").fetchone()[0] - before
             api.log(f"location route={name} vehicles={len(rows)} passages={added}")
             if name in config["private"]:

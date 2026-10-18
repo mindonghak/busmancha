@@ -1,7 +1,7 @@
 import sqlite3
 import unittest
 from datetime import datetime, timedelta
-from location_collection import KST, ingest, init_db, reserve, route_active, evaluate_route_exclusion, polling_intervals, poll_due, PLANNED_DAILY_LIMIT
+from location_collection import KST, ingest, init_db, reserve, route_active, evaluate_route_exclusion, polling_intervals, poll_due, PLANNED_DAILY_LIMIT, pilot_capacity, pilot_period, select_pilot_routes
 
 
 class LocationTest(unittest.TestCase):
@@ -86,10 +86,12 @@ class LocationTest(unittest.TestCase):
         self.assertTrue(reserve(self.conn, self.now+timedelta(days=1)))
 
     def test_expansion_stays_within_quota_even_for_24_hour_routes(self):
-        self.assertEqual(polling_intervals(5, 24), (180, 360))
-        for public, private in ((5, 24), (5, 100), (25, 100), (30, 0), (0, 100), (0, 0)):
+        self.assertEqual(polling_intervals(5, 240), (180, 600))
+        self.assertEqual(pilot_capacity(5), 120)
+        for public, private in ((5, 240), (5, 100), (10, 200), (0, 100), (0, 0)):
             public_seconds, private_seconds = polling_intervals(public, private)
-            self.assertLessEqual(public * 86400 / public_seconds + private * 86400 / private_seconds, PLANNED_DAILY_LIMIT)
+            selected = min(private, pilot_capacity(public))
+            self.assertLessEqual(public * 86400 / public_seconds + selected * 8 * 3600 / private_seconds, PLANNED_DAILY_LIMIT)
 
     def test_poll_schedule_survives_restart_and_counts_failed_attempts(self):
         self.assertTrue(poll_due(self.conn, 'r', self.now, 360))
@@ -107,11 +109,57 @@ class LocationTest(unittest.TestCase):
     def test_never_full_exclusion_requires_300_stops_and_three_days(self):
         for day in range(3):
             for stop in range(100):
-                self.conn.execute("insert into route_stop_daily (route_name,vehicle_id,service_date,station_seq,remain_seat) values (?,?,?,?,?)",
+                self.conn.execute("insert into route_peak_daily (route_name,vehicle_id,service_date,station_seq,remain_seat) values (?,?,?,?,?)",
                     ("candidate", f"v{stop}", f"2026-09-{23+day}", stop, 2))
+            for period in ('am', 'pm'):
+                self.conn.execute('insert into route_peak_checks values (?,?,?,3)', ('candidate', f'2026-09-{23+day}', period))
         self.conn.commit()
         self.assertEqual(evaluate_route_exclusion(self.conn, "candidate", self.now), (300, 3, True))
         self.assertIsNone(evaluate_route_exclusion(self.conn, "candidate", self.now))
+
+    def test_pilot_windows_are_weekdays_and_end_exclusive(self):
+        for hour, expected in ((5, None), (6, 'am'), (9, 'am'), (10, None), (16, None), (17, 'pm'), (20, 'pm'), (21, None)):
+            self.assertEqual(pilot_period(self.now.replace(hour=hour)), expected)
+        self.assertIsNone(pilot_period(datetime(2026, 10, 18, 8, tzinfo=KST)))
+
+    def test_selection_is_stable_per_day_rotates_and_replaces_exclusions(self):
+        candidates = [f'route{i:03d}' for i in range(100)]
+        first = select_pilot_routes(self.conn, candidates, self.now, 20)
+        self.assertEqual(first, select_pilot_routes(self.conn, candidates, self.now, 20))
+        next_day = select_pilot_routes(self.conn, candidates, self.now + timedelta(days=1), 20)
+        self.assertFalse(set(first) & set(next_day))
+        self.conn.execute('insert into route_exclusions values (?,?,?,?,?,?)', (first[0], self.now.isoformat(), 300, 3, 0, 'test'))
+        self.conn.commit()
+        replacement = select_pilot_routes(self.conn, candidates, self.now, 20)
+        self.assertEqual(len(replacement), 20)
+        self.assertNotIn(first[0], replacement)
+        self.assertEqual(select_pilot_routes(self.conn, candidates, self.now.replace(hour=12), 20), [])
+
+    def test_known_full_priority_still_reserves_discovery_slots(self):
+        known = [f'known{i:03d}' for i in range(100)]
+        trial = [f'trial{i:03d}' for i in range(100)]
+        chosen = select_pilot_routes(self.conn, known+trial, self.now, 120, known)
+        self.assertEqual(sum(name in known for name in chosen), 90)
+        self.assertEqual(sum(name in trial for name in chosen), 30)
+
+    def test_ten_minute_pilot_gap_never_becomes_previous_stop_evidence(self):
+        self.observe(4, 2, 0)
+        self.observe(5, 1, 20, 10)
+        self.assertEqual(self.rows(), [(5, 20, 'arrival')])
+
+    def test_incomplete_peak_coverage_does_not_exclude(self):
+        for day in range(3):
+            date = f'2026-09-{23+day}'
+            for stop in range(100):
+                self.conn.execute('insert into route_peak_daily values (?,?,?,?,?)', ('candidate', f'v{stop}', date, stop, 2))
+            self.conn.execute('insert into route_peak_checks values (?,?,?,3)', ('candidate', date, 'am'))
+        self.conn.commit()
+        self.assertIsNone(evaluate_route_exclusion(self.conn, 'candidate', self.now))
+        for day in range(3):
+            self.conn.execute('insert into route_peak_checks values (?,?,?,3)', ('candidate', f'2026-09-{23+day}', 'pm'))
+        self.conn.execute('insert into route_peak_daily values (?,?,?,?,?)', ('candidate', 'fullbus', '2026-09-29', 1, 0))
+        self.conn.commit()
+        self.assertIsNone(evaluate_route_exclusion(self.conn, 'candidate', self.now))
 
     def test_zero_seat_or_insufficient_dates_never_excludes(self):
         for day in range(4):

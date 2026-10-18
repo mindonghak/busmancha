@@ -1,7 +1,7 @@
 # Location-based collection
 
-The Python collector runs on AWS Lightsail and checks due routes every 180 seconds.
-Run `--mode location --interval-seconds 180 --include-private`.
+The Python collector runs on AWS Lightsail and checks due routes every 60 seconds.
+Run `--mode location --interval-seconds 60 --include-private`.
 The previous collector is available with `--mode arrival` for manual audits only.
 
 Public routes are M4137, M4130, M4448, G6009 and 6002. Full-route private collection
@@ -11,13 +11,16 @@ Osan, Yongin, Hwaseong), 5002B (Yongin), 3000, 7001 and 5100 (Suwon/Yongin),
 (Seongnam/Yongin/Suwon), and M2323 (Namyangju). Private routes never appear in
 website options or results automatically. Additional private routes are 6004,
 6008, M4449, 8100, 9000 (Seongnam), 9007, M5422, 1007-1, 7770 and M7111.
-There are 5 public and 24 private routes in total.
+There are 5 public and 211 private candidates in total. The discovery tool added
+187 candidates after the official API returned valid remaining-seat counts.
+The full candidate inventory is in config/collection-routes.json.
 
-Public routes are polled every 180 seconds and private routes every 360 seconds.
-Intervals are automatically rounded to worker ticks as configured route counts
-increase, planning at most 8,500 requests/day even with 24-hour service. The
-current 29-route configuration has a conservative upper estimate of 8,160/day;
-first/last departure windows reduce actual usage. Per-route last-attempt times
+Public routes are polled every 180 seconds during their service windows.
+Private candidates are polled every 600 seconds only Monday-Friday,
+06:00-10:00 and 17:00-21:00 KST, excluding the end boundary.
+At most 120 private candidates are active in one day. This bounds planned
+calls at 8,160/day even with 24-hour public service; first/last departure
+windows reduce actual usage. Per-route last-attempt times
 persist across restarts, including failed requests. A durable counter stops at 9,000
 location attempts including failures. Do not run a second worker on another host.
 
@@ -43,7 +46,7 @@ two hours starts a new journey. Small backwards jumps are ignored.
 Polling misses events, arrival seat updates may lag or reflect boarding/alighting,
 and slow segments can be overrepresented. This is not exact boarding-failure
 probability. Check stop/hour/day coverage before publishing private routes.
-Six-minute pilot polling misses more stop events than three-minute public
+Ten-minute pilot polling misses more stop events than three-minute public
 polling. The six-minute evidence age limit is unchanged; distant or older
 observations are not inserted to fill the gaps.
 First/last departure windows can omit vehicles still finishing a trip after the
@@ -51,15 +54,25 @@ last departure, per the existing collection policy. Metadata expires at 30 days;
 refresh using `scripts/refresh_route_catalog.py` before then.
 
 Private candidate routes are screened using the rolling 7 days in
-`route_stop_daily`. One sample per vehicle, service day and served stop is kept;
+`route_peak_daily`. Only weekday peak observations count. One sample per
+vehicle, service day and served stop is kept;
 a later zero-seat observation replaces a positive seat count. After at least
-300 such observations over three or more dates, a route is automatically removed
+300 such observations over three or more weekdays, with at least three valid
+checks in both morning and evening on each qualifying date, a route is removed
 from collection only if no zero-seat observation exists. Routes with unknown or
 insufficient seat data are never excluded. M4101, 5100 and M2323 were added as
 additional crowding candidates after the live API returned zero-seat vehicles.
 The evidence is retained locally;
 excluded routes are not automatically reactivated, so inspect the exclusion row
-and clear it manually if seasonal service or demand changes.
+and clear it manually if seasonal service or demand changes. Their historical
+data is preserved. The scheduler replaces excluded candidates from the reserve
+pool on its next tick. Insufficient data does not mean a route is never full.
+
+`pilot_selection` persists the daily active set. Recent zero-seat observations
+and verified discovery hints receive priority. At least a quarter of slots
+are reserved for exploring other candidates when available, and previous
+selection dates rotate trials fairly. A discovery hint affects collection
+priority only and is never inserted into statistical history.
 
 ## Publication
 

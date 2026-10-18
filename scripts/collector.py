@@ -687,14 +687,16 @@ def main() -> int:
                 lock.close()
                 raise SystemExit("A location collector is already running for this database.")
             try:
+                last_sync = 0
                 while True:
                     started = time.monotonic()
                     collect(conn, sys.modules[__name__], route_names, args.include_private, not args.no_weather)
-                    if not args.no_postgres_sync:
+                    if not args.no_postgres_sync and (args.once or time.monotonic() - last_sync >= 180):
                         sync_postgres_if_configured()
+                        last_sync = time.monotonic()
                     if args.once:
                         return 0
-                    delay = max(0, max(180, args.interval_seconds) - (time.monotonic()-started))
+                    delay = max(0, max(60, args.interval_seconds) - (time.monotonic()-started))
                     log(f"location sleep_seconds={delay:.1f}")
                     time.sleep(delay)
             finally:

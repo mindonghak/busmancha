@@ -14,10 +14,14 @@ The website stays on Vercel and the database stays on Supabase.
 - Worker: `busmancha-collector.service`
 - Weekly official route refresh: `busmancha-catalog.timer`
 
-The worker runs every 180 seconds during configured service windows,
-including private pilot routes. It uses the existing daily request budget,
+The scheduler wakes every 60 seconds. Public routes are queried every 180
+seconds during service hours; private pilots every 600 seconds only on weekday
+06:00-10:00 and 17:00-21:00 KST windows. It uses the existing daily request budget,
 then synchronizes SQLite records to Supabase after each batch.
 Systemd starts the worker at boot and restarts it after failure.
+`scripts/deploy/collector-tick.conf` is installed as a service drop-in on the
+existing server. It keeps the scheduler at 60 seconds without changing the
+route polling intervals. Supabase synchronization remains about every 3 minutes.
 Collector log files rotate daily or at 10 MB, retaining seven archives.
 
 ## Operations

@@ -24,7 +24,7 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/busmancha
 Environment=PYTHONUNBUFFERED=1
 Environment=TZ=Asia/Seoul
-ExecStart=/home/ubuntu/busmancha/.venv/bin/python scripts/collector.py --mode location --interval-seconds 180 --include-private
+ExecStart=/home/ubuntu/busmancha/.venv/bin/python scripts/collector.py --mode location --interval-seconds 60 --include-private
 Restart=always
 RestartSec=30
 NoNewPrivileges=true
