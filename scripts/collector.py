@@ -649,12 +649,16 @@ def main() -> int:
     parser.add_argument("--include-private", action="store_true", help="Collect unpublished pilot routes within a separate daily budget.")
     parser.add_argument(
         "--routes",
-        default=",".join(ROUTES.keys()),
+        default=None,
         help="Comma-separated route names. Defaults to all configured routes.",
     )
     args = parser.parse_args()
-    route_names = [name.strip() for name in args.routes.split(",") if name.strip()]
-    unknown_routes = [name for name in route_names if name not in ROUTES]
+    available_routes = ROUTES
+    if args.mode == "location":
+        config = json.loads((ROOT / "config" / "collection-routes.json").read_text(encoding="utf-8"))
+        available_routes = {**config["public"], **(config["private"] if args.include_private else {})}
+    route_names = [name.strip() for name in args.routes.split(",") if name.strip()] if args.routes else list(available_routes)
+    unknown_routes = [name for name in route_names if name not in available_routes]
     if unknown_routes:
         raise SystemExit(f"Unknown route names: {', '.join(unknown_routes)}")
 
