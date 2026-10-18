@@ -8,6 +8,9 @@ from datetime import datetime, timedelta, timezone
 KST = timezone(timedelta(hours=9))
 URL = "https://apis.data.go.kr/6410000/buslocationservice/v2/getBusLocationListv2"
 MAX_GAP = 360
+DAILY_LIMIT = 9000
+PLANNED_DAILY_LIMIT = 8500
+POLL_TICK = 180
 EXCLUSION_WINDOW_DAYS = 7
 EXCLUSION_MIN_SAMPLES = 300
 EXCLUSION_MIN_DAYS = 3
@@ -39,6 +42,9 @@ def init_db(conn):
             on station_passages(route_name, service_date, station_seq);
         create table if not exists location_api_budget (
             day text primary key, attempts integer not null
+        );
+        create table if not exists location_route_poll (
+            route_id text primary key, last_attempt_at text not null
         );
         create table if not exists route_stop_daily (
             id integer primary key autoincrement, route_name text not null,
@@ -73,10 +79,24 @@ def reserve(conn, now):
         conn.execute("begin immediate")
         conn.execute("insert or ignore into location_api_budget values (?,0)", (day,))
         count = conn.execute("select attempts from location_api_budget where day=?", (day,)).fetchone()[0]
-        if count >= 9000:
+        if count >= DAILY_LIMIT:
             return False
         conn.execute("update location_api_budget set attempts=attempts+1 where day=?", (day,))
     return True
+
+
+def polling_intervals(public_count, private_count):
+    # Bound usage even if every route runs 24 hours; preserve space for pilots.
+    public_budget = PLANNED_DAILY_LIMIT * (0.6 if private_count else 1)
+    public_interval = max(POLL_TICK, math.ceil(public_count * 86400 / public_budget / POLL_TICK) * POLL_TICK)
+    remaining = PLANNED_DAILY_LIMIT - public_count * 86400 / public_interval
+    private_interval = max(POLL_TICK, math.ceil(private_count * 86400 / remaining / POLL_TICK) * POLL_TICK)
+    return public_interval, private_interval
+
+
+def poll_due(conn, route_id, now, interval):
+    row = conn.execute("select last_attempt_at from location_route_poll where route_id=?", (route_id,)).fetchone()
+    return not row or (now - datetime.fromisoformat(row[0])).total_seconds() >= interval - 1
 
 
 def is_service(station):
@@ -208,6 +228,10 @@ def collect(conn, api, route_names=None, include_private=True, weather=True):
     selected = {**config["public"], **(config["private"] if include_private else {})}
     if route_names:
         selected = {k: v for k, v in selected.items() if k in route_names or (include_private and k in config["private"])}
+    public_count = sum(name in config["public"] for name in selected)
+    private_count = len(selected) - public_count
+    public_interval, private_interval = polling_intervals(public_count, private_count)
+    api.log(f"location_schedule routes={len(selected)} public_seconds={public_interval} private_seconds={private_interval}")
     now = datetime.now(KST)
     active = False
     for name, route_id in selected.items():
@@ -222,9 +246,15 @@ def collect(conn, api, route_names=None, include_private=True, weather=True):
         if not route_active(meta["info"], now):
             continue
         active = True
+        interval = public_interval if name in config["public"] else private_interval
+        if not poll_due(conn, route_id, now, interval):
+            continue
         if not reserve(conn, now):
             api.log("location skipped=daily_budget_exhausted")
             break
+        with conn:
+            conn.execute("insert into location_route_poll values (?,?) on conflict(route_id) do update set last_attempt_at=excluded.last_attempt_at",
+                         (route_id, now.isoformat()))
         try:
             payload = api.fetch_text(URL, {"serviceKey": api.service_key(), "routeId": route_id, "format": "xml"})
             import xml.etree.ElementTree as ET

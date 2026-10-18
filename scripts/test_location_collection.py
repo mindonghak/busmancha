@@ -1,7 +1,7 @@
 import sqlite3
 import unittest
 from datetime import datetime, timedelta
-from location_collection import KST, ingest, init_db, reserve, route_active, evaluate_route_exclusion
+from location_collection import KST, ingest, init_db, reserve, route_active, evaluate_route_exclusion, polling_intervals, poll_due, PLANNED_DAILY_LIMIT
 
 
 class LocationTest(unittest.TestCase):
@@ -84,6 +84,20 @@ class LocationTest(unittest.TestCase):
         self.conn.commit()
         self.assertFalse(reserve(self.conn, self.now))
         self.assertTrue(reserve(self.conn, self.now+timedelta(days=1)))
+
+    def test_expansion_stays_within_quota_even_for_24_hour_routes(self):
+        self.assertEqual(polling_intervals(5, 24), (180, 360))
+        for public, private in ((5, 24), (5, 100), (25, 100), (30, 0), (0, 100), (0, 0)):
+            public_seconds, private_seconds = polling_intervals(public, private)
+            self.assertLessEqual(public * 86400 / public_seconds + private * 86400 / private_seconds, PLANNED_DAILY_LIMIT)
+
+    def test_poll_schedule_survives_restart_and_counts_failed_attempts(self):
+        self.assertTrue(poll_due(self.conn, 'r', self.now, 360))
+        self.conn.execute('insert into location_route_poll values (?,?)', ('r', self.now.isoformat()))
+        self.conn.commit()
+        self.assertFalse(poll_due(self.conn, 'r', self.now + timedelta(seconds=180), 360))
+        self.assertTrue(poll_due(self.conn, 'r', self.now + timedelta(seconds=360), 360))
+        self.assertFalse(poll_due(self.conn, 'r', self.now - timedelta(seconds=10), 360))
 
     def test_friday_overnight_uses_friday_schedule(self):
         info = {"downFirstTime": "06:00", "downLastTime": "00:30", "satDownFirstTime": "07:00", "satDownLastTime": "23:00"}

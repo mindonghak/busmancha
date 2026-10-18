@@ -1,6 +1,6 @@
 # Location-based collection
 
-The default Python collector polls the route-wide location API every 180 seconds.
+The Python collector runs on AWS Lightsail and checks due routes every 180 seconds.
 Run `--mode location --interval-seconds 180 --include-private`.
 The previous collector is available with `--mode arrival` for manual audits only.
 
@@ -9,9 +9,16 @@ includes M4108, M4403, M4434 and 6001 from Hwaseong, plus 1550-1 (Suwon,
 Osan, Yongin, Hwaseong), 5002B (Yongin), 3000, 7001 and 5100 (Suwon/Yongin),
 1000 (Goyang), 8002 (Gapyeong/Namyangju), M4102 (Seongnam), M4101
 (Seongnam/Yongin/Suwon), and M2323 (Namyangju). Private routes never appear in
-website options or results automatically. Their official first/last departure
-windows schedule at most about 7,166 route queries/day on the tested weekday,
-below the 9,000-call local cap. A durable counter stops at 9,000
+website options or results automatically. Additional private routes are 6004,
+6008, M4449, 8100, 9000 (Seongnam), 9007, M5422, 1007-1, 7770 and M7111.
+There are 5 public and 24 private routes in total.
+
+Public routes are polled every 180 seconds and private routes every 360 seconds.
+Intervals are automatically rounded to worker ticks as configured route counts
+increase, planning at most 8,500 requests/day even with 24-hour service. The
+current 29-route configuration has a conservative upper estimate of 8,160/day;
+first/last departure windows reduce actual usage. Per-route last-attempt times
+persist across restarts, including failed requests. A durable counter stops at 9,000
 location attempts including failures. Do not run a second worker on another host.
 
 ## Passage calculation
@@ -36,6 +43,9 @@ two hours starts a new journey. Small backwards jumps are ignored.
 Polling misses events, arrival seat updates may lag or reflect boarding/alighting,
 and slow segments can be overrepresented. This is not exact boarding-failure
 probability. Check stop/hour/day coverage before publishing private routes.
+Six-minute pilot polling misses more stop events than three-minute public
+polling. The six-minute evidence age limit is unchanged; distant or older
+observations are not inserted to fill the gaps.
 First/last departure windows can omit vehicles still finishing a trip after the
 last departure, per the existing collection policy. Metadata expires at 30 days;
 refresh using `scripts/refresh_route_catalog.py` before then.
@@ -59,6 +69,6 @@ PostgreSQL with RLS enabled and public roles revoked. Search and analysis read
 results will be sparse, including empty weekday/weekend filters. Historic
 unobserved vehicle positions cannot be reconstructed.
 
-The local worker still needs the PC running. The legacy Vercel collector is
+The Lightsail worker operates independently of the PC. The legacy Vercel collector is
 disabled by default to prevent independent arrival collection. GitHub schedules
 do not provide reliable three-minute polling.

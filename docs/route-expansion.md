@@ -20,27 +20,42 @@ config/collection-routes.json separates public routes from private pilots.
 Private routes never become public automatically. The statistics API rejects
 them and the options API excludes them, even after records are synchronized.
 
-The local collector must run with --include-private. It keeps the existing four
-routes at their configured interval, then rotates through two eligible stops
-per private route per batch. It skips pass-through stops and uses official
-directional weekday/weekend first/last departure windows. After 30 days without
-a refreshed catalog, private collection stops rather than guessing schedules.
+The Lightsail collector runs with --include-private and collects route-wide
+location snapshots. There are five public routes and 24 private pilots.
+Public routes use 3-minute intervals; pilots use 6-minute intervals. Both use
+official weekday/weekend first/last departure windows and exclude non-service
+stops from saved history. Metadata expires after 30 days.
 
 Refresh metadata with scripts/refresh_route_catalog.py and review routing changes.
+The server runs this weekly. One failed route refresh preserves its old metadata
+without changing its age, while other routes still refresh.
 
-Local arrival API safety limits (SQLite api_budget):
+Location API safety limits (SQLite location_api_budget):
 
 - Total 9,000 attempts per local calendar day.
-- Private routes at most 800 attempts per day.
-- Private collection stops when total attempts reach 7,000, reserving capacity.
+- Plan route intervals for at most 8,500 calls even with 24-hour service.
+- At 5 public / 24 private routes, the conservative daily upper estimate is 8,160.
+- Automatically increase intervals as configured route counts grow.
+- Persist per-route last-attempt times, preventing restart retry bursts.
 - Failed network/API attempts also consume local budget.
-- The first counter initialization estimates earlier calls from collector.log.
 - Calls by other hosts or tools are not counted. Keep only one active collector.
 
-At 15-minute intervals, 76 existing stops use about 5,852 calls in a 19.25-hour
-service day. Four pilot routes add at most 8 calls per batch, about 616 per day.
-Rotating coverage is sparse and accumulates more slowly than the public routes.
-Large-scale expansion needs larger quotas or a validated route-level source.
+On 2026-10-18, official route metadata and valid seat data were verified before
+adding these private routes:
+
+| Routes | Region / corridor |
+| --- | --- |
+| 6004, 6008 | Hwaseong / Dongtan - Seoul |
+| M4449 | Osan / Hwaseong - Seoul |
+| 8100 | Yongin / Seongnam - Seoul |
+| 9000, 9007 | Seongnam - Seoul |
+| M5422, 1007-1, 7770 | Suwon area - Seoul |
+| M7111 | Paju - Seoul |
+
+9000 explicitly uses Seongnam route ID 234000002, not the similarly named
+Gimpo airport route. All new pilots remain hidden on the website. Six-minute
+polling gathers fewer stop events; it does not relax seat evidence requirements.
+More routes at the public 3-minute cadence require a higher provider quota.
 
 Before publication, review at least two weeks of weekday/weekend coverage,
 both directions, useful hours, invalid-seat rates, station identity, and quota
