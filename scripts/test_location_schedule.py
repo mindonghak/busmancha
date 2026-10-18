@@ -57,7 +57,34 @@ class PeakScheduleTest(unittest.TestCase):
         self.assertEqual(self.calls.count('private0'), 2)
         self.assertGreater(self.calls.count('public'), 2)
         self.run_at(datetime(2026, 10, 24, 8, tzinfo=KST))
-        self.assertEqual(self.calls.count('private0'), 2)
+        self.assertEqual(self.calls.count('private0'), 3)
+
+    def test_weekend_collects_midday_evening_and_overnight_every_ten_minutes(self):
+        self.configure()
+        for hour, minute in ((0, 0), (0, 9), (0, 10), (12, 0), (16, 0), (23, 0)):
+            self.run_at(datetime(2026, 10, 24, hour, minute, tzinfo=KST))
+        self.assertEqual(self.calls.count('private0'), 5)
+        self.run_at(datetime(2026, 10, 25, 12, tzinfo=KST))
+        self.assertEqual(self.calls.count('private0'), 6)
+
+    def test_weekend_large_pool_uses_smaller_full_day_cohort(self):
+        self.configure(240)
+        self.run_at(datetime(2026, 10, 24, 12, tzinfo=KST))
+        self.assertEqual(len(self.calls), 56)
+        self.run_at(datetime(2026, 10, 24, 12, tzinfo=KST))
+        self.assertEqual(len(self.calls), 56)
+
+    def test_weekend_still_honors_official_first_and_last_service(self):
+        self.configure()
+        path = self.root / 'config/route-catalog.json'
+        catalog = json.loads(path.read_text())
+        for stem in ('satUp', 'satDown'):
+            catalog['Trial0']['info'][stem+'FirstTime'] = '07:00'
+            catalog['Trial0']['info'][stem+'LastTime'] = '22:00'
+        path.write_text(json.dumps(catalog))
+        for hour in (6, 7, 23):
+            self.run_at(datetime(2026, 10, 24, hour, tzinfo=KST))
+        self.assertEqual(self.calls.count('private0'), 1)
 
     def test_large_pool_caps_active_routes_and_repeated_ticks_do_not_spend_quota(self):
         self.configure(240)

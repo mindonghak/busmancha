@@ -88,6 +88,9 @@ class LocationTest(unittest.TestCase):
     def test_expansion_stays_within_quota_even_for_24_hour_routes(self):
         self.assertEqual(polling_intervals(5, 240), (180, 600))
         self.assertEqual(pilot_capacity(5), 120)
+        weekend = datetime(2026, 10, 18, 12, tzinfo=KST)
+        self.assertEqual(pilot_capacity(5, weekend), 42)
+        self.assertLessEqual(5 * 86400 / 180 + pilot_capacity(5, weekend) * 86400 / 600, PLANNED_DAILY_LIMIT)
         for public, private in ((5, 240), (5, 100), (10, 200), (0, 100), (0, 0)):
             public_seconds, private_seconds = polling_intervals(public, private)
             selected = min(private, pilot_capacity(public))
@@ -110,17 +113,50 @@ class LocationTest(unittest.TestCase):
         for day in range(3):
             for stop in range(100):
                 self.conn.execute("insert into route_peak_daily (route_name,vehicle_id,service_date,station_seq,remain_seat) values (?,?,?,?,?)",
-                    ("candidate", f"v{stop}", f"2026-09-{23+day}", stop, 2))
+                    ("candidate", f"v{stop}", f"2026-09-{25+day}", stop, 2))
             for period in ('am', 'pm'):
-                self.conn.execute('insert into route_peak_checks values (?,?,?,3)', ('candidate', f'2026-09-{23+day}', period))
+                self.conn.execute('insert into route_peak_checks values (?,?,?,3)', ('candidate', f'2026-09-{25+day}', period))
         self.conn.commit()
         self.assertEqual(evaluate_route_exclusion(self.conn, "candidate", self.now), (300, 3, True))
         self.assertIsNone(evaluate_route_exclusion(self.conn, "candidate", self.now))
 
-    def test_pilot_windows_are_weekdays_and_end_exclusive(self):
+    def test_weekday_windows_end_exclusive_and_weekends_cover_full_day(self):
         for hour, expected in ((5, None), (6, 'am'), (9, 'am'), (10, None), (16, None), (17, 'pm'), (20, 'pm'), (21, None)):
             self.assertEqual(pilot_period(self.now.replace(hour=hour)), expected)
-        self.assertIsNone(pilot_period(datetime(2026, 10, 18, 8, tzinfo=KST)))
+        for date in (17, 18):
+            for hour in (0, 8, 10, 12, 16, 21, 23):
+                self.assertEqual(pilot_period(datetime(2026, 10, date, hour, tzinfo=KST)), 'am' if hour < 12 else 'pm')
+
+    def test_weekday_only_coverage_does_not_exclude_weekend_candidates(self):
+        for day in (23, 24, 25):
+            date = f'2026-09-{day}'
+            self.conn.executemany('insert into route_peak_daily values (?,?,?,?,?)',
+                [('candidate', f'v{i}', date, i, 5) for i in range(100)])
+            for period in ('am', 'pm'):
+                self.conn.execute('insert into route_peak_checks values (?,?,?,3)', ('candidate', date, period))
+        self.conn.commit()
+        self.assertIsNone(evaluate_route_exclusion(self.conn, 'candidate', self.now))
+
+    def test_weekend_zero_seats_prevent_exclusion(self):
+        for day in (25, 26, 27):
+            date = f'2026-09-{day}'
+            self.conn.executemany('insert into route_peak_daily values (?,?,?,?,?)',
+                [('candidate', f'v{i}', date, i, 5) for i in range(100)])
+            for period in ('am', 'pm'):
+                self.conn.execute('insert into route_peak_checks values (?,?,?,3)', ('candidate', date, period))
+        self.conn.execute('insert into route_peak_daily values (?,?,?,?,?)', ('candidate', 'full', '2026-09-27', 101, 0))
+        self.conn.commit()
+        self.assertIsNone(evaluate_route_exclusion(self.conn, 'candidate', self.now))
+
+    def test_old_weekday_only_exclusions_rechecked_once_without_erasing_history(self):
+        self.conn.execute("delete from collector_migrations where name='weekend_screening_v1'")
+        self.conn.execute('insert into route_exclusions values (?,?,?,?,?,?)', ('candidate', self.now.isoformat(), 300, 3, 0,
+            'No zero seats in >=300 rush-hour observations across >=3 weekdays, each covering morning and evening'))
+        self.conn.commit()
+        self.observe(5, 1, 0)
+        init_db(self.conn)
+        self.assertEqual(self.conn.execute('select count(*) from route_exclusions').fetchone()[0], 0)
+        self.assertEqual(len(self.rows()), 1)
 
     def test_selection_is_stable_per_day_rotates_and_replaces_exclusions(self):
         candidates = [f'route{i:03d}' for i in range(100)]

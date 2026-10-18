@@ -16,10 +16,12 @@ There are 5 public and 211 private candidates in total. The discovery tool added
 The full candidate inventory is in config/collection-routes.json.
 
 Public routes are polled every 180 seconds during their service windows.
-Private candidates are polled every 600 seconds only Monday-Friday,
-06:00-10:00 and 17:00-21:00 KST, excluding the end boundary.
-At most 120 private candidates are active in one day. This bounds planned
-calls at 8,160/day even with 24-hour public service; first/last departure
+Private candidates are polled every 600 seconds: Monday-Friday,
+06:00-10:00 and 17:00-21:00 KST, excluding the end boundary; Saturday and
+Sunday throughout official service hours, including midday and overnight.
+At most 120 private candidates are active per weekday and 42 per weekend day.
+This bounds planned calls at 8,160/weekday and 8,448/weekend day even with
+24-hour public service; first/last departure
 windows reduce actual usage. Per-route last-attempt times
 persist across restarts, including failed requests. A durable counter stops at 9,000
 location attempts including failures. Do not run a second worker on another host.
@@ -54,13 +56,17 @@ last departure, per the existing collection policy. Metadata expires at 30 days;
 refresh using `scripts/refresh_route_catalog.py` before then.
 
 Private candidate routes are screened using the rolling 7 days in
-`route_peak_daily`. Only weekday peak observations count. One sample per
+`route_peak_daily`. Weekday peaks and all weekend service hours count. One sample per
 vehicle, service day and served stop is kept;
 a later zero-seat observation replaces a positive seat count. After at least
-300 such observations over three or more weekdays, with at least three valid
-checks in both morning and evening on each qualifying date, a route is removed
-from collection only if no zero-seat observation exists. Routes with unknown or
-insufficient seat data are never excluded. M4101, 5100 and M2323 were added as
+300 such observations over three or more days including at least one weekend
+date, with at least three valid checks in both periods on each qualifying date,
+a route is removed from collection only if no zero-seat observation exists.
+Routes with unknown or
+weekday-only seat coverage are never excluded. Weekend periods are before and
+after noon; weekday periods are the two rush-hour windows. Old weekday-only
+exclusion decisions are cleared once for reassessment; no history is deleted.
+Routes with insufficient seat data are never excluded. M4101, 5100 and M2323 were added as
 additional crowding candidates after the live API returned zero-seat vehicles.
 The evidence is retained locally;
 excluded routes are not automatically reactivated, so inspect the exclusion row

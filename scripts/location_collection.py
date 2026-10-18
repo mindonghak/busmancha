@@ -14,6 +14,7 @@ POLL_TICK = 60
 PUBLIC_INTERVAL = 180
 PRIVATE_INTERVAL = 600
 PRIVATE_WINDOWS = ((6, 10), (17, 21))
+WEEKEND_WINDOWS = ((0, 12), (12, 24))
 MAX_ACTIVE_PILOTS = 120
 EXCLUSION_WINDOW_DAYS = 7
 EXCLUSION_MIN_SAMPLES = 300
@@ -89,6 +90,11 @@ def init_db(conn):
             from location_history where remain_seat is not null and remain_seat>=0
             group by route_name,vehicle_id,substr(collected_at,1,10),station_seq""")
         conn.execute("insert into collector_migrations values ('route_quality_v1',datetime('now'))")
+    if not conn.execute("select 1 from collector_migrations where name='weekend_screening_v1'").fetchone():
+        # Recheck old weekday-only decisions without removing observed history.
+        conn.execute("delete from route_exclusions where reason=?", (
+            "No zero seats in >=300 rush-hour observations across >=3 weekdays, each covering morning and evening",))
+        conn.execute("insert into collector_migrations values ('weekend_screening_v1',datetime('now'))")
     conn.commit()
 
 
@@ -108,18 +114,21 @@ def polling_intervals(public_count, private_count):
     return PUBLIC_INTERVAL, PRIVATE_INTERVAL
 
 
+def pilot_windows(now):
+    return WEEKEND_WINDOWS if now.astimezone(KST).weekday() >= 5 else PRIVATE_WINDOWS
+
+
 def pilot_period(now):
     local = now.astimezone(KST)
-    if local.weekday() >= 5:
-        return None
-    for period, (start, end) in zip(('am', 'pm'), PRIVATE_WINDOWS):
+    for period, (start, end) in zip(('am', 'pm'), pilot_windows(local)):
         if start <= local.hour < end:
             return period
     return None
 
 
-def pilot_capacity(public_count):
-    peak_seconds = sum(end-start for start, end in PRIVATE_WINDOWS) * 3600
+def pilot_capacity(public_count, now=None):
+    windows = pilot_windows(now) if now is not None else PRIVATE_WINDOWS
+    peak_seconds = sum(end-start for start, end in windows) * 3600
     remaining = PLANNED_DAILY_LIMIT - public_count * 86400 / PUBLIC_INTERVAL
     return max(0, min(MAX_ACTIVE_PILOTS, int(remaining // (peak_seconds / PRIVATE_INTERVAL))))
 
@@ -214,12 +223,17 @@ def evaluate_route_exclusion(conn, name, now):
     samples, days, full = int(samples), int(days), int(full)
     if samples < EXCLUSION_MIN_SAMPLES or days < EXCLUSION_MIN_DAYS or full:
         return None
+    covered_dates = conn.execute('''select service_date from route_peak_checks
+        where route_name=? and service_date>=? and valid_checks>=3
+        group by service_date having count(distinct period)=2''', (name, since)).fetchall()
+    if not any(datetime.fromisoformat(day).weekday() >= 5 for (day,) in covered_dates):
+        return None
     if conn.execute('select 1 from route_peak_daily where route_name=? and service_date>=? and remain_seat=0 limit 1', (name, since)).fetchone():
         return None
     with conn:
         conn.execute("insert or ignore into route_exclusions values (?,?,?,?,?,?)",
                      (name, now.isoformat(), samples, days, full,
-                      "No zero seats in >=300 rush-hour observations across >=3 weekdays, each covering morning and evening"))
+                      "No zero seats in >=300 observations across >=3 days including a weekend, each covering morning and evening"))
     if conn.execute("select changes()").fetchone()[0] != 1:
         return None
     return samples, days, True
@@ -305,7 +319,7 @@ def collect(conn, api, route_names=None, include_private=True, weather=True):
     public_count = sum(name in config['public'] for name in selected)
     candidates = [name for name in selected if name in config['private'] and name in catalog
                   and (now.replace(tzinfo=None)-datetime.fromisoformat(catalog[name]['updatedAt'])).days <= 30]
-    pilots = select_pilot_routes(conn, candidates, now, pilot_capacity(public_count), config.get('pilot_priority', []))
+    pilots = select_pilot_routes(conn, candidates, now, pilot_capacity(public_count, now), config.get('pilot_priority', []))
     selected = {name: route_id for name, route_id in selected.items() if name in config['public'] or name in pilots}
     public_interval, private_interval = polling_intervals(public_count, len(pilots))
     api.log(f"location_schedule routes={len(selected)} candidate_pool={len(candidates)} active_pilots={len(pilots)} peak={pilot_period(now)} public_seconds={public_interval} private_seconds={private_interval}")

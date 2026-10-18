@@ -22,9 +22,10 @@ them and the options API excludes them, even after records are synchronized.
 
 The Lightsail collector runs with --include-private and collects route-wide
 location snapshots. There are five public routes and 211 private candidates,
-with up to 120 private routes selected per weekday.
-Public routes use 3-minute intervals; pilots use 10-minute intervals only on
-weekday 06:00-10:00 and 17:00-21:00 KST windows. Both use
+with up to 120 private routes selected per weekday and 42 per weekend day.
+Public routes use 3-minute intervals; pilots use 10-minute intervals on
+weekday 06:00-10:00 and 17:00-21:00 KST windows and throughout weekend service
+hours. Both use
 official weekday/weekend first/last departure windows and exclude non-service
 stops from saved history. Metadata expires after 30 days.
 
@@ -37,6 +38,7 @@ Location API safety limits (SQLite location_api_budget):
 - Total 9,000 attempts per local calendar day.
 - Plan route intervals for at most 8,500 calls even with 24-hour service.
 - At 5 public / 120 active private routes, the conservative daily estimate is 8,160.
+- Weekend full-day polling uses at most 42 pilots: 8,448 requests including public routes.
 - Rotate the reserve pool while keeping pilot intervals at 10 minutes.
 - Persist per-route last-attempt times, preventing restart retry bursts.
 - Failed network/API attempts also consume local budget.
@@ -75,8 +77,10 @@ routes. Each location probe consumes the durable location budget.
 The daily active set favors recent observed zero-seat routes while reserving
 at least 25% of slots for trials when available. Trials rotate by last-selected
 date. A route with no zero-seat observations is excluded only after >=300
-deduplicated rush-hour samples across >=3 weekdays with both peak periods
-adequately covered; its slot is refilled automatically. Existing data is kept.
+deduplicated samples across >=3 days including a weekend date, with both daily
+periods adequately covered; its slot is refilled automatically. Weekday-only
+coverage never qualifies for exclusion. Weekend periods are before/after noon.
+Existing data is kept, and old weekday-only exclusions are reassessed once.
 
 Before publication, review at least two weeks of weekday/weekend coverage,
 both directions, useful hours, invalid-seat rates, station identity, and quota
