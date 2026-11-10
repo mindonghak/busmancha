@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import RouteSelector, { type RouteSelectorProps } from "./route-selector";
 
 type Stop = { seq: number; name: string; direction: string };
 type Hour = { seq: number; hour: number; samples: number; days: number; full: number; seats: number; probability: number; first_date: string; last_date: string };
 type Data = { stops: Stop[]; rows: Hour[]; dataSource?: "near_stop" | "historical" };
 
-export default function RouteAnalysis({ routes }: { routes: string[] }) {
+export default function RouteAnalysis({ routes, favorites, toggleFavorite }: Pick<RouteSelectorProps, "routes" | "favorites" | "toggleFavorite">) {
   const [route, setRoute] = useState("");
   const [direction, setDirection] = useState("outbound");
   const [day, setDay] = useState("전체");
@@ -59,14 +60,16 @@ export default function RouteAnalysis({ routes }: { routes: string[] }) {
   }, [data]);
   const dates = hours.map(r => r.last_date).sort();
   const last = dates.at(-1);
+  const routeInfo = routes.find(r => r.name === route);
+  const directionLabel = direction === "outbound" ? routeInfo?.end : routeInfo?.start;
   return <section className="routeAnalysis">
     <div className="routePicker">
-      <label>버스번호<select aria-label="분석 버스번호" value={route} onChange={e => { setRoute(e.target.value); setSeq(null); setData(null); setStops([]); }}><option value="">선택</option>{routes.map(r => <option key={r}>{r}</option>)}</select></label>
+      <RouteSelector routes={routes} value={route} favorites={favorites} toggleFavorite={toggleFavorite} onChange={name => { setRoute(name); setSeq(null); setData(null); setStops([]); }} />
     </div>
     {!route ? <div className="emptyState">분석할 버스를 선택해 주세요.</div> : <div className="routeAnalysisBody">
       <aside className="routeRail">
         <h2>{route} 노선</h2>
-        <div className="railDirections">{[["outbound", "서울 방면"], ["return", "동탄 방면"]].map(([v, label]) => <button key={v} aria-pressed={direction === v} onClick={() => { setDirection(v); setSeq(null); }}>{label}</button>)}</div>
+        <div className="railDirections">{[["outbound", `${routeInfo?.end ?? "종점"} 방면`], ["return", `${routeInfo?.start ?? "기점"} 방면`]].map(([v, label]) => <button key={v} aria-pressed={direction === v} onClick={() => { setDirection(v); setSeq(null); }}>{label}</button>)}</div>
         <ol>{visible.map(s => {
           const risk = stopRisk.get(s.seq);
           const riskClass = !risk ? "unobserved" : risk.probability >= 50 ? "risk-high" : risk.probability >= 20 ? "risk-medium" : "risk-low";
@@ -87,7 +90,7 @@ export default function RouteAnalysis({ routes }: { routes: string[] }) {
           </div>
         </details>
         {!selected ? <div className="emptyState">정류장을 선택해 주세요.</div> : <>
-          <p className="eyebrow">{route} · {direction === "outbound" ? "서울 방면" : "동탄 방면"} · {day} · {weather === "전체" ? "모든 날씨" : weather}</p>
+          <p className="eyebrow">{route} · {directionLabel} 방면 · {day} · {weather === "전체" ? "모든 날씨" : weather}</p>
           <h2>{selected.name}</h2><h3>시간대별 만차 관측 비율</h3>
           {error ? <p role="alert">{error} <button onClick={() => setRetry(r => r + 1)}>다시 시도</button></p> : !data ? <p role="status">통계를 불러오는 중입니다.</p> : <>
             {data.dataSource === "historical" ? <p className="analysisNotice">새 기준 표본이 아직 충분하지 않아 과거 수집 기록을 함께 사용했습니다. 참고용으로 확인해 주세요.</p> : null}

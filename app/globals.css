@@ -11,6 +11,47 @@
   --yellow: #b58112;
 }
 
+.busSelector { min-width:0; width:100%; }
+.busSelectorLabel { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:13px; margin-bottom:8px; }
+.busSelectorLabel small { color:var(--muted); font-weight:400; }
+.selectedBus { display:flex; align-items:center; background:white; border:1px solid #bfc9ce; border-radius:6px; overflow:hidden; }
+.busPickerToggle { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px; border:0; background:transparent; text-align:left; flex:1; min-width:0; color:var(--ink); cursor:pointer; }
+.busPickerToggle>span { display:grid; gap:5px; min-width:0; }
+.busPickerToggle strong { font-size:16px; }
+.busPickerToggle small { font-size:12px; color:var(--muted); overflow-wrap:anywhere; line-height:1.5; }
+.favoriteButton { display:grid; place-items:center; flex:0 0 42px; width:42px; height:44px; border:0; background:transparent; color:#6b777d; cursor:pointer; }
+.favoriteButton.isFavorite { color:#a46b08; }
+.favoriteButton:hover { background:#fff5d6; }
+.favoriteShortcuts { display:flex; gap:6px; flex-wrap:wrap; max-height:104px; overflow:auto; margin-bottom:10px; }
+.favoriteShortcuts button { display:flex; align-items:center; gap:5px; padding:7px 9px; background:white; border:1px solid var(--line); border-radius:4px; font-size:12px; color:var(--ink); cursor:pointer; }
+.favoriteShortcuts button svg { color:#a46b08; }
+.favoriteShortcuts button[aria-pressed=true] { background:#e5f4ed; border-color:var(--green); color:var(--green); }
+.busBrowser { margin-top:10px; border:1px solid var(--line); border-radius:6px; background:white; overflow:hidden; }
+.busSearch { display:flex; align-items:center; gap:8px; padding:10px; border-bottom:1px solid var(--line); color:var(--muted); }
+.busSearch input { width:100%; min-width:0; font:inherit; font-size:13px; border:0; padding:5px 0; background:white; color:var(--ink); }
+.busSearch input:focus { outline:2px solid var(--blue); outline-offset:2px; }
+.busSearch button { display:grid; place-items:center; width:28px; height:28px; border:0; background:transparent; cursor:pointer; }
+.busScopes { display:flex; align-items:center; gap:4px; padding:6px 8px; border-bottom:1px solid var(--line); }
+.busScopes button { padding:8px 5px; border:0; border-bottom:2px solid transparent; background:transparent; font-size:12px; cursor:pointer; color:var(--muted); }
+.busScopes button[aria-pressed=true] { border-color:var(--green); color:var(--green); font-weight:700; }
+.busScopes small { margin-left:auto; font-size:11px; color:var(--muted); }
+.busList { max-height:330px; overflow:auto; overscroll-behavior:contain; }
+.busRow { display:flex; align-items:center; border-bottom:1px solid #edf0f1; }
+.busRow.selected { background:#edf8f3; }
+.busChoice { flex:1; min-width:0; display:grid; gap:5px; text-align:left; border:0; padding:12px 10px; background:transparent; color:var(--ink); cursor:pointer; }
+.busChoice:hover { background:#f2f7f8; }
+.busName { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.busName strong { font-size:15px; }
+.busEndpoints { font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+.busChoice small { color:var(--muted); font-size:11px; line-height:1.5; }
+.sampleBadge { font-size:10px; color:#8b5f14; background:#fff5dc; padding:3px 5px; border-radius:3px; }
+.busEmpty { padding:20px 12px; margin:0; font-size:13px; color:var(--muted); line-height:1.7; }
+.busMore { width:100%; padding:12px; border:0; background:#f0f5f6; color:var(--blue); font-size:12px; cursor:pointer; }
+.favoriteFootnote { padding:9px 10px; margin:0; border-top:1px solid var(--line); color:var(--muted); font-size:11px; }
+.selectedCoverage { font-size:11px; color:var(--muted); margin:8px 0 0; line-height:1.6; }
+.routePicker>.busSelector { max-width:520px; }
+.railDirections button { overflow-wrap:anywhere; min-width:0; }
+
 * {
   box-sizing: border-box;
 }
@@ -746,7 +787,7 @@ tr:last-child td {
 .routeRail li { position:relative; }
 .routeRail li::before { content:''; position:absolute; left:17px; top:0; bottom:0; width:2px; background:#a9babf; }
 .routeRail li:first-child::before { top:50%; }.routeRail li:last-child::before { bottom:50%; }
-.routeRail li button { position:relative; display:grid; grid-template-columns:16px minmax(0,1fr) 24px; align-items:center; gap:8px; text-align:left; width:100%; min-height:48px; border:0; background:transparent; padding:10px; border-radius:4px; font-size:13px; }
+.routeRail li button { position:relative; display:grid; grid-template-columns:16px minmax(0,1fr) 36px; align-items:center; gap:8px; text-align:left; width:100%; min-height:48px; border:0; background:transparent; padding:10px; border-radius:4px; font-size:13px; }
 .routeRail li button[aria-pressed=true] { background:#e1f2ed; font-weight:700; color:#125e56; }
 .routeRail li.risk-low .railDot { background:#b9e3c6; border-color:#4b9b63; }
 .routeRail li.risk-medium .railDot { background:#f8d58b; border-color:#c38b1b; }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { publicRoutes } from "@/lib/public-routes";
+import { getPublicRouteOptions } from "@/lib/public-routes";
 import catalog from "@/config/route-catalog.json";
 
 type SummaryRow = {
@@ -283,7 +283,9 @@ async function hotspotStats(params: URLSearchParams, historyTable: "approach_sea
 
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
-  if (!publicRoutes.includes(params.get("route") ?? "")) {
+  const publicRoutes = await getPublicRouteOptions().catch(() => null);
+  if (!publicRoutes) return NextResponse.json({ error: "노선 정보를 불러오지 못했습니다. 잠시 후 다시 조회해 주세요." }, { status: 503 });
+  if (!publicRoutes.some(r => r.name === params.get("route"))) {
     return NextResponse.json({ error: "버스번호를 선택해 주세요." }, { status: 400 });
   }
   if (params.has("days") && !["7", "30", "90"].includes(params.get("days")!)) {

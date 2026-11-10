@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import RouteAnalysis from "./route-analysis";
+import RouteSelector, { useFavoriteRoutes } from "./route-selector";
+import type { RouteOption } from "@/lib/public-routes";
 
 type StationOption = {
   route_name: string;
@@ -12,6 +14,7 @@ type StationOption = {
 
 type OptionsResponse = {
   routes: string[];
+  routeOptions: RouteOption[];
   weekdays: string[];
   times: string[];
   stations: StationOption[];
@@ -84,9 +87,11 @@ const analysisTabs: { id: AnalysisMode; label: string }[] = [
 ];
 
 export default function DashboardClient() {
+  const favoriteProps = useFavoriteRoutes();
   const [options, setOptions] = useState<OptionsResponse | null>(null);
   const [searchStats, setSearchStats] = useState<StatsResponse | null>(null);
   const [route, setRoute] = useState("");
+  const [routeStations, setRouteStations] = useState<Record<string, StationOption[]>>({});
   const [weekday, setWeekday] = useState(allValue);
   const [time, setTime] = useState(allValue);
   const [station, setStation] = useState(allValue);
@@ -98,9 +103,17 @@ export default function DashboardClient() {
   const [error, setError] = useState<string | null>(null);
 
   const filteredStations = useMemo(() => {
-    if (!options) return [];
-    return options.stations.filter((item) => item.route_name === route);
-  }, [options, route]);
+    return routeStations[route] ?? [];
+  }, [routeStations, route]);
+
+  useEffect(() => {
+    if (!route || routeStations[route]) return;
+    let ignore = false;
+    fetchJson<{ stations: StationOption[] }>(`/api/options?route=${encodeURIComponent(route)}`)
+      .then(body => { if (!ignore) setRouteStations(current => ({ ...current, [route]: body.stations })); })
+      .catch(() => { if (!ignore) setError("정류장 목록을 불러오지 못했습니다. 버스를 다시 선택해 주세요."); });
+    return () => { ignore = true; };
+  }, [route, routeStations]);
 
   const fetchSearchStats = async () => {
     setLoading(true);
@@ -208,8 +221,8 @@ export default function DashboardClient() {
               </div>
             </div>
             <form onSubmit={submit}>
-              <Filter label="버스번호" options={["", ...(options?.routes ?? [])]} value={route} onChange={setRoute} />
-              <label><span>타는 정류장</span><select aria-label="타는 정류장" value={station} disabled={!route} onChange={(event) => setStation(event.target.value)}>
+              <RouteSelector routes={options?.routeOptions ?? []} value={route} onChange={setRoute} {...favoriteProps} />
+              <label><span>타는 정류장</span><select aria-label="타는 정류장" value={station} disabled={!route || !routeStations[route]} onChange={(event) => setStation(event.target.value)}>
                 <option value={allValue}>전체 정류장</option>
                 {filteredStations.map((item) => <option key={`${item.station_id}-${item.station_seq}`} value={String(item.station_seq)}>{item.station_seq}. {item.station_name}</option>)}
               </select></label>
@@ -248,7 +261,7 @@ export default function DashboardClient() {
         </section>
       ) : null}
 
-      {activeTab === "analysis" ? <RouteAnalysis routes={options?.routes ?? []} /> : null}
+      {activeTab === "analysis" ? <RouteAnalysis routes={options?.routeOptions ?? []} {...favoriteProps} /> : null}
 
     </main>
   );

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { publicRoutes } from "@/lib/public-routes";
+import { getPublicRouteOptions } from "@/lib/public-routes";
 import catalog from "@/config/route-catalog.json";
 
 export async function GET(request: NextRequest) {
@@ -9,7 +9,9 @@ export async function GET(request: NextRequest) {
   const day = p.get("dayType") ?? "전체";
   const weather = p.get("weather") ?? "전체";
   const days = p.get("days") ?? "0";
-  if (!publicRoutes.includes(route) || !["전체", "평일", "주말"].includes(day)
+  const publicRoutes = await getPublicRouteOptions().catch(() => null);
+  if (!publicRoutes) return NextResponse.json({ error: "노선 정보를 불러오지 못했습니다. 잠시 후 다시 조회해 주세요." }, { status: 503 });
+  if (!publicRoutes.some(r => r.name === route) || !["전체", "평일", "주말"].includes(day)
     || !["전체", "강수없음", "비", "눈"].includes(weather) || !["0", "7", "30", "90"].includes(days)) {
     return NextResponse.json({ error: "분석 조건을 확인해 주세요." }, { status: 400 });
   }
@@ -37,7 +39,9 @@ export async function GET(request: NextRequest) {
         and ($3='전체' or w.condition=$3)
         and ($4::int=0 or s.service_date >= (current_timestamp at time zone 'Asia/Seoul')::date-($4::int-1))
     `, [route, day, weather, Number(days)]);
-    const useHistorical = Number(fresh.rows[0]?.samples ?? 0) < 30 || Number(fresh.rows[0]?.days ?? 0) < 3;
+    const legacy = Number(fresh.rows[0]?.samples ?? 0) === 0
+      ? await query<{ count: string }>("select count(*)::text as count from seat_history where route_name=$1", [route]) : null;
+    const useHistorical = Number(fresh.rows[0]?.samples ?? 0) === 0 && Number(legacy?.rows[0]?.count ?? 0) > 0;
     const historyTable = useHistorical ? "seat_history" : "approach_seat_history";
     const result = await query(`
       with daily_weather as (
