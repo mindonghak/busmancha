@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import RouteAnalysis from "./route-analysis";
+import CrowdingTopTen from "./crowding-top-ten";
 import RouteSelector, { useFavoriteRoutes } from "./route-selector";
 import type { RouteOption } from "@/lib/public-routes";
 
@@ -99,6 +100,11 @@ export default function DashboardClient() {
   const [days, setDays] = useState("");
   const [searchConditions, setSearchConditions] = useState({ route: "", weekday: allValue, time: allValue, station: allValue, weather: allValue });
   const [activeTab, setActiveTab] = useState<MainTab>("search");
+  const [analysisRoute, setAnalysisRoute] = useState("");
+  const [analysisDay, setAnalysisDay] = useState("전체");
+  const openRankedRoute = (name: string, day: string) => {
+    setAnalysisRoute(name); setAnalysisDay(day); setActiveTab("analysis");
+  };
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -243,7 +249,7 @@ export default function DashboardClient() {
               <div className="emptyState">조건에 맞는 기록이 없습니다. 날씨나 요일 조건을 넓히거나 조회 기간을 바꿔보세요.</div>
             ) : null}
             {!searchStats && !loading ? (
-              <div className="searchPlaceholder"><p className="eyebrow">과거 탑승 여건</p><h2>내 정류장의 만차 기록</h2><div className="placeholderMetrics"><span>만차 관측 비율 <strong>— %</strong></span><span>평균 잔여좌석 <strong>— 석</strong></span></div></div>
+              <CrowdingTopTen {...favoriteProps} onSelect={openRankedRoute} />
             ) : null}
             {searchStats ? (
               <SearchResult
@@ -261,7 +267,10 @@ export default function DashboardClient() {
         </section>
       ) : null}
 
-      {activeTab === "analysis" ? <RouteAnalysis routes={options?.routeOptions ?? []} {...favoriteProps} /> : null}
+      {activeTab === "analysis" ? <>
+        <RouteAnalysis route={analysisRoute} onRouteChange={setAnalysisRoute} day={analysisDay} onDayChange={setAnalysisDay} routes={options?.routeOptions ?? []} {...favoriteProps} />
+        <details className="rankingMethod" open={!analysisRoute}><summary>만차 관측 TOP 10 보기</summary><CrowdingTopTen {...favoriteProps} onSelect={openRankedRoute} /></details>
+      </> : null}
 
     </main>
   );

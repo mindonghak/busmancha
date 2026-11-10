@@ -7,10 +7,8 @@ type Stop = { seq: number; name: string; direction: string };
 type Hour = { seq: number; hour: number; samples: number; days: number; full: number; seats: number; probability: number; first_date: string; last_date: string };
 type Data = { stops: Stop[]; rows: Hour[]; dataSource?: "near_stop" | "historical" };
 
-export default function RouteAnalysis({ routes, favorites, toggleFavorite }: Pick<RouteSelectorProps, "routes" | "favorites" | "toggleFavorite">) {
-  const [route, setRoute] = useState("");
+export default function RouteAnalysis({ routes, favorites, toggleFavorite, route, onRouteChange: setRoute, day, onDayChange: setDay }: Pick<RouteSelectorProps, "routes" | "favorites" | "toggleFavorite"> & { route: string; onRouteChange: (route: string) => void; day: string; onDayChange: (day: string) => void }) {
   const [direction, setDirection] = useState("outbound");
-  const [day, setDay] = useState("전체");
   const [weather, setWeather] = useState("전체");
   const [period, setPeriod] = useState("0");
   const [seq, setSeq] = useState<number | null>(null);

@@ -17,6 +17,15 @@ that route's served stations. This avoids sending thousands of station records
 on every visit. Route discovery and statistics use PostgreSQL, not upstream bus
 API requests.
 
+The landing results area and empty analysis view show the top ten routes by
+zero-seat passage rate over the last 30 Korean calendar dates. All-day, weekday
+and weekend rankings each require at least 300 passages across three dates and
+a record within the last seven dates. Rankings use only published routes and
+served stops, sort using unrounded rates, and refresh hourly. Each entry shows
+its denominator and links directly to the route analysis; favorites use the same
+browser store. Sampling coverage differs between routes, so this is explicitly
+an observed-rate ranking rather than a claim about all bus trips.
+
 Validation: production build, real database route/search/analysis responses,
 desktop and 390px mobile browser checks, favorite add/remove/tab sharing and
 reload persistence. Do not record browser test visits in production analytics.
